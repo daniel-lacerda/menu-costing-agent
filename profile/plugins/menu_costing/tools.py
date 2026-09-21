@@ -1,0 +1,353 @@
+"""Tool boundary: parse arguments, call the domain, serialize results for the model."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import BaseModel, Field, ValidationError
+
+from .domain.errors import DomainError
+from .domain.ledger import Store
+from .domain.models import (
+    Consultation,
+    KitchenProfile,
+    PantryAmendment,
+    Purchase,
+    Recipe,
+    RecipeInput,
+)
+from .domain.pantry import find_item, load_pantry
+from .domain.pricing import cost_breakdown, pricing
+from .domain.recipes import check_ingredients, evaluate_gate, recipe_id
+from .domain.units import ConversionTable
+
+TOOLSET = "menu_costing"
+Handler = Callable[..., str]
+
+
+@dataclass(frozen=True)
+class Settings:
+    pantry_path: Path
+    conversions_path: Path
+    budget_brl: float
+    platform_fee: float
+    margins: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class Tool:
+    name: str
+    schema: dict[str, Any]
+    handler: Handler
+
+
+class PantryInventoryArgs(BaseModel):
+    pass
+
+
+class RecipeUpdateArgs(BaseModel):
+    recipe_id: str
+    liked: bool | None = Field(
+        default=None, description="Ela gostou da receita e quer seguir com ela"
+    )
+    techniques: dict[str, bool] | None = Field(
+        default=None,
+        description="Técnicas confirmadas com ela; ficam guardadas no perfil da cozinha",
+    )
+    purchases: list[Purchase] | None = Field(
+        default=None, description="Compras complementares confirmadas; substitui a lista anterior"
+    )
+    accepted: bool | None = Field(
+        default=None,
+        description="Ela aceitou o prato. Só é gravado com todos os bloqueios resolvidos",
+    )
+
+
+class DishPriceArgs(BaseModel):
+    recipe_id: str
+    margins: list[float] | None = Field(
+        default=None, description="Margens dos cenários (0 a 1); sem isso, usa as do config"
+    )
+    chosen_price_brl: float | None = Field(
+        default=None, gt=0, description="Preço que ela escolheu, para registrar na consulta"
+    )
+
+
+class ConsultationTools:
+    def __init__(self, settings: Settings, store: Store) -> None:
+        self.settings = settings
+        self.store = store
+        self.table = ConversionTable.model_validate(
+            yaml.safe_load(settings.conversions_path.read_text("utf-8"))
+        )
+
+    # -- pantry ---------------------------------------------------------------
+
+    def pantry_inventory(self, args: PantryInventoryArgs, **kwargs: Any) -> dict[str, Any]:
+        consultation = self._consultation(kwargs)
+        return {"items": self._pantry(), "budget": _budget(consultation)}
+
+    def pantry_amend(self, args: PantryAmendment, **kwargs: Any) -> dict[str, Any]:
+        if not args.stated_by_cook:
+            raise DomainError("Só registre uma correção que a cozinheira informou.")
+        item = find_item(args.name, self._pantry())
+        if item is None:
+            raise DomainError(f"Não existe {args.name!r} na despensa.")
+        if (args.package_size is None) != (args.package_unit is None):
+            raise DomainError("Informe package_size e package_unit juntos.")
+        if args.package_size is not None and item.base_unit != "un":
+            raise DomainError(
+                f"{item.name} já está em {item.base_unit}; não há embalagem a informar."
+            )
+        amendments = [a for a in self.store.load_amendments() if a.name != item.name]
+        amendments.append(args.model_copy(update={"name": item.name}))
+        self.store.save_amendments(amendments)
+        return {"item": find_item(item.name, self._pantry())}
+
+    # -- kitchen --------------------------------------------------------------
+
+    def kitchen_profile(self, args: KitchenProfile, **kwargs: Any) -> dict[str, Any]:
+        current = self.store.load_kitchen()
+        patch = args.model_dump(exclude_unset=True)
+        if "techniques" in patch:
+            patch["techniques"] = {**current.techniques, **patch["techniques"]}
+        updated = current.model_copy(update=patch)
+        if patch:
+            self.store.save_kitchen(updated)
+        return {"profile": updated, "missing": updated.missing()}
+
+    # -- recipes --------------------------------------------------------------
+
+    def recipe_register(self, args: RecipeInput, **kwargs: Any) -> dict[str, Any]:
+        consultation = self._consultation(kwargs)
+        checks = check_ingredients(args, self._pantry(), self.table)
+        rid = recipe_id(consultation.recipes, args.url)
+        previous = consultation.recipes.get(rid)
+        recipe = Recipe(
+            id=rid,
+            liked=previous.liked if previous else None,
+            purchases=previous.purchases if previous else [],
+            **args.model_dump(),
+        )
+        consultation.recipes[rid] = recipe
+        self.store.save_consultation(consultation)
+        gate = evaluate_gate(recipe, self.store.load_kitchen(), checks, self.table)
+        return {"recipe_id": rid, "ingredients": checks, "gate": gate}
+
+    def recipe_update(self, args: RecipeUpdateArgs, **kwargs: Any) -> dict[str, Any]:
+        consultation = self._consultation(kwargs)
+        recipe = _recipe(consultation, args.recipe_id)
+        if args.liked is not None:
+            recipe.liked = args.liked
+        if args.techniques:
+            profile = self.store.load_kitchen()
+            self.store.save_kitchen(
+                profile.model_copy(update={"techniques": {**profile.techniques, **args.techniques}})
+            )
+        if args.purchases is not None:
+            unconfirmed = [p.ingredient for p in args.purchases if not p.confirmed_by_cook]
+            if unconfirmed:
+                raise DomainError(
+                    "Só entram compras com preço confirmado pela cozinheira: "
+                    + ", ".join(unconfirmed)
+                )
+            recipe.purchases = args.purchases
+        checks = check_ingredients(recipe, self._pantry(), self.table)
+        gate = evaluate_gate(recipe, self.store.load_kitchen(), checks, self.table)
+        if args.accepted is not None:
+            if args.accepted and not gate.ready:
+                raise DomainError(
+                    "O prato não pode ser aceito: " + "; ".join(b.message for b in gate.blockers)
+                )
+            purchases_brl = sum(p.price_brl for p in recipe.purchases)
+            available = consultation.remaining_brl() + (purchases_brl if recipe.accepted else 0.0)
+            if args.accepted and purchases_brl > available:
+                raise DomainError(
+                    f"As compras somam R$ {purchases_brl:.2f} "
+                    f"e o orçamento restante é R$ {available:.2f}."
+                )
+            recipe.accepted = args.accepted
+        self.store.save_consultation(consultation)
+        return {
+            "recipe_id": recipe.id,
+            "gate": gate,
+            "accepted": recipe.accepted,
+            "budget": _budget(consultation),
+        }
+
+    # -- pricing --------------------------------------------------------------
+
+    def dish_price(self, args: DishPriceArgs, **kwargs: Any) -> dict[str, Any]:
+        consultation = self._consultation(kwargs)
+        recipe = _recipe(consultation, args.recipe_id)
+        checks = check_ingredients(recipe, self._pantry(), self.table)
+        if not recipe.accepted:
+            gate = evaluate_gate(recipe, self.store.load_kitchen(), checks, self.table)
+            pending = "; ".join(b.message for b in gate.blockers) or "falta ela aceitar o prato"
+            raise DomainError(f"O prato ainda não foi aceito: {pending}.")
+        cost = cost_breakdown(recipe, checks, self._pantry(), self.table)
+        margins = list(args.margins) if args.margins else list(self.settings.margins)
+        prices = pricing(cost.cmv_portion_brl, self.settings.platform_fee, margins)
+        if args.chosen_price_brl is not None:
+            if args.chosen_price_brl < prices.floor_price_brl:
+                raise DomainError(
+                    f"R$ {args.chosen_price_brl:.2f} fica abaixo do preço mínimo "
+                    f"R$ {prices.floor_price_brl:.2f}; ela perderia dinheiro."
+                )
+            recipe.chosen_price_brl = args.chosen_price_brl
+            self.store.save_consultation(consultation)
+        return {
+            "recipe_id": recipe.id,
+            "cost": cost,
+            "pricing": prices,
+            "chosen_price_brl": recipe.chosen_price_brl,
+            "budget": _budget(consultation),
+        }
+
+    # -- helpers --------------------------------------------------------------
+
+    def _pantry(self) -> list[Any]:
+        return load_pantry(self.settings.pantry_path, self.store.load_amendments())
+
+    def _consultation(self, kwargs: dict[str, Any]) -> Consultation:
+        session_id = kwargs.get("session_id") or "default"
+        return self.store.load_consultation(str(session_id), self.settings.budget_brl)
+
+
+def _recipe(consultation: Consultation, rid: str) -> Recipe:
+    recipe = consultation.recipes.get(rid)
+    if recipe is None:
+        raise DomainError(f"Não há receita {rid!r} nesta consulta. Registre-a com recipe_register.")
+    return recipe
+
+
+def _budget(consultation: Consultation) -> dict[str, float]:
+    return {
+        "total_brl": consultation.budget_brl,
+        "committed_brl": consultation.committed_brl(),
+        "remaining_brl": consultation.remaining_brl(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Registration
+
+_DESCRIPTIONS: dict[str, str] = {
+    "pantry_inventory": (
+        "Lista a despensa da Dona Maria com estoque e custo unitário derivados da planilha "
+        "(custo = preço total pago ÷ quantidade comprada) e o orçamento restante para compras. "
+        "Chame no início da consulta e sempre que precisar do nome exato de um item."
+    ),
+    "pantry_amend": (
+        "Registra um fato sobre um item da despensa que a planilha não tem e a cozinheira "
+        "informou: o tamanho da embalagem de um item contado em unidades, ou a correção do "
+        "preço pago."
+    ),
+    "kitchen_profile": (
+        "Lê ou atualiza o perfil da cozinha: equipamentos, técnicas que ela domina e limitações. "
+        "Chame sem argumentos para ler. Devolve os campos obrigatórios ainda desconhecidos; "
+        "pergunte-os antes de avançar."
+    ),
+    "recipe_register": (
+        "Registra uma receita candidata extraída de uma página real e a compara com a despensa e a "
+        "cozinha. Devolve o que ela já tem, o que falta comprar e os bloqueios para aceitação. "
+        "Registrar de novo a mesma URL atualiza a receita."
+    ),
+    "recipe_update": (
+        "Atualiza uma receita com o que a cozinheira disse: se gostou, técnicas confirmadas, "
+        "compras complementares com preço confirmado, e a aceitação do prato. A aceitação só é "
+        "gravada com todos os bloqueios resolvidos e as compras dentro do orçamento."
+    ),
+    "dish_price": (
+        "Calcula, para um prato aceito, o CMV por porção linha a linha, o preço mínimo e "
+        "cenários de preço por margem, já com a taxa da plataforma. Recusa pratos não aceitos. "
+        "Passe chosen_price_brl para registrar o preço que ela escolheu."
+    ),
+}
+
+
+def build_tools(settings: Settings, store: Store) -> list[Tool]:
+    tools = ConsultationTools(settings, store)
+    bound: list[tuple[str, type[BaseModel], Callable[..., dict[str, Any]]]] = [
+        ("pantry_inventory", PantryInventoryArgs, tools.pantry_inventory),
+        ("pantry_amend", PantryAmendment, tools.pantry_amend),
+        ("kitchen_profile", KitchenProfile, tools.kitchen_profile),
+        ("recipe_register", RecipeInput, tools.recipe_register),
+        ("recipe_update", RecipeUpdateArgs, tools.recipe_update),
+        ("dish_price", DishPriceArgs, tools.dish_price),
+    ]
+    return [
+        Tool(
+            name=name,
+            schema=tool_schema(name, _DESCRIPTIONS[name], model),
+            handler=_guard(model, method),
+        )
+        for name, model, method in bound
+    ]
+
+
+def tool_schema(name: str, description: str, model: type[BaseModel]) -> dict[str, Any]:
+    """OpenAI-style function schema with every $ref inlined: the Gemini adapter drops $defs."""
+    parameters = _inline(model.model_json_schema())
+    parameters["additionalProperties"] = False
+    return {"name": name, "description": description, "parameters": parameters}
+
+
+def _inline(schema: dict[str, Any]) -> dict[str, Any]:
+    definitions = schema.get("$defs", {})
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, dict):
+            if "$ref" in node:
+                target = definitions[node["$ref"].rsplit("/", 1)[-1]]
+                return walk({**target, **{k: v for k, v in node.items() if k != "$ref"}})
+            return {k: walk(v) for k, v in node.items() if k not in ("$defs", "title")}
+        if isinstance(node, list):
+            return [walk(item) for item in node]
+        return node
+
+    result: dict[str, Any] = walk(schema)
+    return result
+
+
+def _guard(model: type[BaseModel], method: Callable[..., dict[str, Any]]) -> Handler:
+    """Expected failures become a result the model can act on; anything else propagates."""
+
+    def handler(args: dict[str, Any], **kwargs: Any) -> str:
+        try:
+            parsed = model.model_validate(args or {})
+        except ValidationError as exc:
+            return _dumps(
+                {
+                    "error": "Argumentos inválidos.",
+                    "details": exc.errors(include_url=False, include_input=False),
+                }
+            )
+        try:
+            result = method(parsed, **kwargs)
+        except DomainError as exc:
+            return _dumps({"error": str(exc)})
+        return _dumps(result)
+
+    return handler
+
+
+def _dumps(payload: Any) -> str:
+    return json.dumps(_plain(payload), ensure_ascii=False)
+
+
+def _plain(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return _plain(value.model_dump(mode="json"))
+    if isinstance(value, dict):
+        return {k: _plain(v) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [_plain(v) for v in value]
+    if isinstance(value, float):
+        return round(value, 4)
+    return value

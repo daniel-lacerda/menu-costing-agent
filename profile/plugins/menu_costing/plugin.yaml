@@ -1,0 +1,12 @@
+name: menu_costing
+version: 0.1.0
+description: "Tools determinísticas da consulta de cardápio: despensa, cozinha, receitas, gate de viabilidade e precificação."
+author: "Daniel Lacerda"
+kind: standalone
+provides_tools:
+  - pantry_inventory
+  - pantry_amend
+  - kitchen_profile
+  - recipe_register
+  - recipe_update
+  - dish_price
