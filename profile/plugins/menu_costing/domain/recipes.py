@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from .errors import DomainError
 from .models import (
     Blocker,
@@ -11,11 +13,12 @@ from .models import (
     KitchenProfile,
     PantryItem,
     Purchase,
+    PurchaseInput,
     Recipe,
     RecipeInput,
 )
 from .pantry import find_item
-from .units import ConversionTable, convert_measure, fold
+from .units import ConversionTable, convert_between, convert_measure, fold
 
 
 def check_ingredients(
@@ -78,19 +81,33 @@ def purchase_for(ingredient: str, purchases: list[Purchase]) -> Purchase | None:
     return next((p for p in purchases if fold(p.ingredient) == key), None)
 
 
-def purchase_quantity_in(
-    purchase: Purchase, check: IngredientCheck, table: ConversionTable
-) -> float:
-    """Purchased quantity expressed in the unit the ingredient need is stated in."""
+def package_in(purchase: PurchaseInput, check: IngredientCheck, table: ConversionTable) -> float:
+    """One package's content expressed in the unit the ingredient need is stated in."""
     if fold(purchase.unit) == fold(check.unit):
         return purchase.quantity
-    if check.unit not in ("g", "ml", "un"):
-        raise DomainError(
-            f"A compra de {purchase.ingredient} está em {purchase.unit!r} e a receita em "
-            f"{check.unit!r}. Registre a compra na mesma unidade da receita."
-        )
-    item_name = check.pantry_item or check.name
-    return convert_measure(purchase.quantity, purchase.unit, check.unit, item_name, table).quantity  # type: ignore[arg-type]
+    if check.pantry_item is not None:
+        return convert_measure(
+            purchase.quantity,
+            purchase.unit,
+            check.unit,  # type: ignore[arg-type]
+            check.pantry_item,
+            table,
+        ).quantity
+    return convert_between(purchase.quantity, purchase.unit, check.unit, table)
+
+
+def plan_purchases(
+    purchases: list[PurchaseInput], checks: list[IngredientCheck], table: ConversionTable
+) -> list[Purchase]:
+    """Attach to each purchase the number of packages that covers the batch shortfall."""
+    planned: list[Purchase] = []
+    for purchase in purchases:
+        check = next((c for c in checks if fold(c.name) == fold(purchase.ingredient)), None)
+        if check is None:
+            raise DomainError(f"{purchase.ingredient!r} não é um ingrediente desta receita.")
+        packages = max(1, math.ceil(check.shortfall / package_in(purchase, check, table)))
+        planned.append(Purchase(**purchase.model_dump(), packages=packages))
+    return planned
 
 
 def evaluate_gate(
@@ -148,33 +165,18 @@ def evaluate_gate(
             )
 
     for check in checks:
-        if check.shortfall <= 0:
-            continue
-        purchase = purchase_for(check.name, recipe.purchases)
-        if purchase is None:
+        if check.shortfall > 0 and purchase_for(check.name, recipe.purchases) is None:
             blockers.append(
                 Blocker(
                     code=f"purchase_needed:{check.name}",
                     message=(
                         f"Falta comprar {check.shortfall:g} {check.unit} de {check.name}, "
-                        "com preço confirmado."
-                    ),
-                )
-            )
-            continue
-        bought = purchase_quantity_in(purchase, check, table)
-        if bought < check.shortfall:
-            blockers.append(
-                Blocker(
-                    code=f"purchase_insufficient:{check.name}",
-                    message=(
-                        f"A compra de {check.name} cobre {bought:g} {check.unit}, "
-                        f"mas faltam {check.shortfall:g}."
+                        "com a embalagem e o preço confirmados."
                     ),
                 )
             )
 
-    return GateReport(ready=not blockers, blockers=blockers)
+    return GateReport(ready=not blockers, blockers=blockers, purchases=recipe.purchases)
 
 
 def recipe_id(existing: dict[str, Recipe], url: str) -> str:

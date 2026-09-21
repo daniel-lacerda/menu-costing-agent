@@ -14,7 +14,7 @@ from .models import (
     Recipe,
 )
 from .pantry import find_item
-from .recipes import purchase_for, purchase_quantity_in
+from .recipes import package_in, purchase_for
 from .units import ConversionTable
 
 
@@ -57,6 +57,7 @@ def cost_breakdown(
         lines=lines,
         cmv_batch_brl=cmv_batch,
         cmv_portion_brl=cmv_batch / recipe.yield_portions,
+        purchases_brl=sum(p.total_brl for p in recipe.purchases),
     )
 
 
@@ -88,8 +89,7 @@ def pricing(cmv_portion_brl: float, platform_fee: float, margins: list[float]) -
 def _purchase_line(
     check: IngredientCheck, purchase: Purchase, used: float, unit: str, table: ConversionTable
 ) -> CostLine:
-    bought = purchase_quantity_in(purchase, check, table)
-    unit_cost = purchase.price_brl / bought
+    unit_cost = purchase.price_brl / package_in(purchase, check, table)
     return CostLine(
         ingredient=check.name,
         source="compra",
@@ -97,5 +97,8 @@ def _purchase_line(
         unit=unit,
         unit_cost_brl=unit_cost,
         cost_brl=used * unit_cost,
-        reference=f"compra: {purchase.quantity:g} {purchase.unit} por R$ {purchase.price_brl:.2f}",
+        reference=(
+            f"compra: {purchase.packages} x {purchase.quantity:g} {purchase.unit} "
+            f"a R$ {purchase.price_brl:.2f}"
+        ),
     )

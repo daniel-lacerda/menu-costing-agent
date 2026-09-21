@@ -17,13 +17,13 @@ from .domain.models import (
     Consultation,
     KitchenProfile,
     PantryAmendment,
-    Purchase,
+    PurchaseInput,
     Recipe,
     RecipeInput,
 )
 from .domain.pantry import find_item, load_pantry
 from .domain.pricing import cost_breakdown, pricing
-from .domain.recipes import check_ingredients, evaluate_gate, recipe_id
+from .domain.recipes import check_ingredients, evaluate_gate, plan_purchases, recipe_id
 from .domain.units import ConversionTable
 
 TOOLSET = "menu_costing"
@@ -59,8 +59,9 @@ class RecipeUpdateArgs(BaseModel):
         default=None,
         description="Técnicas confirmadas com ela; ficam guardadas no perfil da cozinha",
     )
-    purchases: list[Purchase] | None = Field(
-        default=None, description="Compras complementares confirmadas; substitui a lista anterior"
+    purchases: list[PurchaseInput] | None = Field(
+        default=None,
+        description="Embalagens confirmadas para o que falta; substitui a lista anterior",
     )
     accepted: bool | None = Field(
         default=None,
@@ -149,6 +150,7 @@ class ConsultationTools:
             self.store.save_kitchen(
                 profile.model_copy(update={"techniques": {**profile.techniques, **args.techniques}})
             )
+        checks = check_ingredients(recipe, self._pantry(), self.table)
         if args.purchases is not None:
             unconfirmed = [p.ingredient for p in args.purchases if not p.confirmed_by_cook]
             if unconfirmed:
@@ -156,15 +158,14 @@ class ConsultationTools:
                     "Só entram compras com preço confirmado pela cozinheira: "
                     + ", ".join(unconfirmed)
                 )
-            recipe.purchases = args.purchases
-        checks = check_ingredients(recipe, self._pantry(), self.table)
+            recipe.purchases = plan_purchases(args.purchases, checks, self.table)
         gate = evaluate_gate(recipe, self.store.load_kitchen(), checks, self.table)
         if args.accepted is not None:
             if args.accepted and not gate.ready:
                 raise DomainError(
                     "O prato não pode ser aceito: " + "; ".join(b.message for b in gate.blockers)
                 )
-            purchases_brl = sum(p.price_brl for p in recipe.purchases)
+            purchases_brl = sum(p.total_brl for p in recipe.purchases)
             available = consultation.remaining_brl() + (purchases_brl if recipe.accepted else 0.0)
             if args.accepted and purchases_brl > available:
                 raise DomainError(

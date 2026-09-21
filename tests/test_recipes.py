@@ -5,14 +5,16 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
+from menu_costing.domain.errors import DomainError
 from menu_costing.domain.models import (
     IngredientInput,
     KitchenProfile,
     PantryItem,
+    PurchaseInput,
     Recipe,
     RecipeInput,
 )
-from menu_costing.domain.recipes import check_ingredients, evaluate_gate
+from menu_costing.domain.recipes import check_ingredients, evaluate_gate, plan_purchases
 from menu_costing.domain.units import ConversionTable
 
 
@@ -52,7 +54,6 @@ def test_gate_is_ready_only_when_everything_is_confirmed(
             "technique_unknown:confeitar",
         ),
         (lambda r, k: setattr(r, "purchases", r.purchases[1:]), "purchase_needed:alcatra"),
-        (lambda r, k: setattr(r.purchases[0], "quantity", 100), "purchase_insufficient:alcatra"),
     ],
 )
 def test_each_unmet_condition_names_its_blocker(
@@ -69,6 +70,47 @@ def test_each_unmet_condition_names_its_blocker(
     report = evaluate_gate(recipe, kitchen, checks, table)
     assert not report.ready
     assert blocker in {b.code for b in report.blockers}
+
+
+def test_purchases_are_whole_packages_covering_the_shortfall(
+    pantry: list[PantryItem], table: ConversionTable, stroganoff: Recipe
+) -> None:
+    checks = check_ingredients(stroganoff, pantry, table)
+    small_box = PurchaseInput(
+        ingredient="creme de leite", quantity=150, unit="g", price_brl=3.5, confirmed_by_cook=True
+    )
+    bottle = PurchaseInput(
+        ingredient="alcatra", quantity=0.5, unit="kg", price_brl=21.0, confirmed_by_cook=True
+    )
+    planned = {p.ingredient: p for p in plan_purchases([small_box, bottle], checks, table)}
+    assert (planned["creme de leite"].packages, planned["creme de leite"].total_brl) == (2, 7.0)
+    assert planned["alcatra"].packages == 1
+
+
+def test_a_purchase_in_another_measure_of_the_same_kind_is_converted(
+    pantry: list[PantryItem], table: ConversionTable
+) -> None:
+    recipe = RecipeInput(
+        title="x",
+        url="https://example.org/x",
+        yield_portions=1,
+        ingredients=[IngredientInput(name="vinho", quantity=0.5, unit="xícara de chá")],
+    )
+    checks = check_ingredients(recipe, pantry, table)
+    bottle = PurchaseInput(
+        ingredient="vinho", quantity=750, unit="ml", price_brl=25.0, confirmed_by_cook=True
+    )
+    assert plan_purchases([bottle], checks, table)[0].packages == 1
+    with pytest.raises(DomainError, match="tipos diferentes"):
+        plan_purchases(
+            [
+                PurchaseInput(
+                    ingredient="vinho", quantity=1, unit="kg", price_brl=1, confirmed_by_cook=True
+                )
+            ],
+            checks,
+            table,
+        )
 
 
 def test_per_portion_items_scale_with_the_yield(

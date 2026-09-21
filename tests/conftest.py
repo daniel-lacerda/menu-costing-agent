@@ -70,7 +70,12 @@ def stroganoff() -> Recipe:
         liked=True,
         purchases=[
             Purchase(
-                ingredient="alcatra", quantity=200, unit="g", price_brl=8.5, confirmed_by_cook=True
+                ingredient="alcatra",
+                quantity=200,
+                unit="g",
+                price_brl=8.5,
+                confirmed_by_cook=True,
+                packages=1,
             ),
             Purchase(
                 ingredient="creme de leite",
@@ -78,6 +83,7 @@ def stroganoff() -> Recipe:
                 unit="g",
                 price_brl=4.5,
                 confirmed_by_cook=True,
+                packages=1,
             ),
         ],
     )

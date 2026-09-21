@@ -168,12 +168,23 @@ class RecipeInput(BaseModel):
     )
 
 
-class Purchase(BaseModel):
+class PurchaseInput(BaseModel):
+    """One package as sold at the market. The tool works out how many packages are needed."""
+
     ingredient: str = Field(description="Nome do ingrediente na receita")
-    quantity: float = Field(gt=0, description="Quantidade comprada")
-    unit: str = Field(description="Unidade da compra, na mesma dimensão da receita")
-    price_brl: float = Field(ge=0, description="Preço da compra")
+    quantity: float = Field(gt=0, description="Conteúdo de uma embalagem")
+    unit: str = Field(description="Unidade do conteúdo (g, ml, un, xícara...)")
+    price_brl: float = Field(ge=0, description="Preço de uma embalagem")
     confirmed_by_cook: bool = Field(description="Deve ser verdadeiro: só entra preço confirmado")
+
+
+class Purchase(PurchaseInput):
+    packages: int = Field(ge=1, description="Embalagens necessárias para um lote, calculado")
+
+    @computed_field(description="Gasto total com este item")  # type: ignore[prop-decorator]
+    @property
+    def total_brl(self) -> float:
+        return self.packages * self.price_brl
 
 
 class Recipe(RecipeInput):
@@ -191,7 +202,7 @@ class Consultation(BaseModel):
     recipes: dict[str, Recipe] = Field(default_factory=dict)
 
     def committed_brl(self) -> float:
-        return sum(p.price_brl for r in self.recipes.values() if r.accepted for p in r.purchases)
+        return sum(p.total_brl for r in self.recipes.values() if r.accepted for p in r.purchases)
 
     def remaining_brl(self) -> float:
         return self.budget_brl - self.committed_brl()
@@ -225,6 +236,9 @@ class Blocker(BaseModel):
 class GateReport(BaseModel):
     ready: bool
     blockers: list[Blocker]
+    purchases: list[Purchase] = Field(
+        default_factory=list, description="Compras com o número de embalagens para um lote"
+    )
 
 
 class CostLine(BaseModel):
@@ -242,6 +256,7 @@ class CostBreakdown(BaseModel):
     lines: list[CostLine]
     cmv_batch_brl: float
     cmv_portion_brl: float
+    purchases_brl: float = Field(description="Gasto real nas embalagens compradas para o lote")
 
 
 class PriceScenario(BaseModel):

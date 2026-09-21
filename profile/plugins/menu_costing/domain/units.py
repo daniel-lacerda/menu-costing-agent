@@ -139,6 +139,23 @@ def _note(quantity: float, unit: str, converted: float, base: str) -> str:
     return f"{quantity:g} {unit} = {converted:g} {base}"
 
 
+def convert_between(quantity: float, unit: str, target: str, table: ConversionTable) -> float:
+    """Convert within one dimension (mass, volume or count) without knowing the item."""
+    groups = (
+        {fold(k): v for k, v in table.volume_ml.items()},
+        {fold(k): v for k, v in table.mass_g.items()},
+        {fold(k): 1.0 for k in table.count},
+    )
+    source, destination = fold(unit), fold(target)
+    for group in groups:
+        if source in group and destination in group:
+            return quantity * group[source] / group[destination]
+    raise DomainError(
+        f"Não converto {unit!r} em {target!r}: são medidas de tipos diferentes. "
+        f"Registre a compra em {target!r} ou em uma medida do mesmo tipo."
+    )
+
+
 def _grams_to_ml(grams: float, item_name: str, profile: ItemProfile, prefix: str) -> Conversion:
     if profile.density_g_per_ml is None:
         raise DomainError(
