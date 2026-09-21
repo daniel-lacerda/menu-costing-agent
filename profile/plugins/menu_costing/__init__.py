@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .domain.ledger import Store
+from .scope import ScopeGuard, host_classifier
 from .tools import TOOLSET, Settings, build_tools
 
 if TYPE_CHECKING:
@@ -28,3 +29,6 @@ def register(ctx: PluginContext) -> None:
     store = Store(home / "consultations")
     for tool in build_tools(settings, store):
         ctx.register_tool(name=tool.name, toolset=TOOLSET, schema=tool.schema, handler=tool.handler)
+    if bool(ctx.get_config("scope_guard", True)):
+        model = str(ctx.get_config("scope_model", "gpt-5.6-luna"))
+        ctx.register_middleware("llm_request", ScopeGuard(host_classifier(ctx, model), model))

@@ -57,6 +57,13 @@ plugins:
         budget_brl: 80.0
         platform_fee: 0.10
         margins: [0.20, 0.35, 0.50]
+        # Off-topic turns are triaged and answered by the cheap model, never by the main one.
+        scope_guard: true
+        scope_model: gpt-5.6-luna
+      # The plugin may pick this one cheaper model for its own calls; nothing else.
+      llm:
+        allow_model_override: true
+        allowed_models: [gpt-5.6-luna]
 
 display:
   language: pt
