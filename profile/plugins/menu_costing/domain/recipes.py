@@ -7,6 +7,7 @@ from .models import (
     Blocker,
     GateReport,
     IngredientCheck,
+    IngredientInput,
     KitchenProfile,
     PantryItem,
     Purchase,
@@ -20,19 +21,23 @@ from .units import ConversionTable, convert_measure, fold
 def check_ingredients(
     recipe: RecipeInput, pantry: list[PantryItem], table: ConversionTable
 ) -> list[IngredientCheck]:
+    lines = [(ingredient, 1, "receita") for ingredient in recipe.ingredients]
+    lines += [(item, recipe.yield_portions, "porcao") for item in recipe.per_portion_items]
     checks: list[IngredientCheck] = []
-    for ingredient in recipe.ingredients:
+    for ingredient, batches, scope in lines:
+        scaled = ingredient.quantity * batches
         if ingredient.pantry_item is None:
             checks.append(
                 IngredientCheck(
                     name=ingredient.name,
                     pantry_item=None,
-                    needed=ingredient.quantity,
+                    scope=scope,
+                    needed=scaled,
                     unit=ingredient.unit,
-                    conversion=f"{ingredient.quantity:g} {ingredient.unit}",
+                    conversion=_scaled_note(ingredient, batches, f"{scaled:g} {ingredient.unit}"),
                     stock=None,
                     status="missing",
-                    shortfall=ingredient.quantity,
+                    shortfall=scaled,
                 )
             )
             continue
@@ -42,23 +47,30 @@ def check_ingredients(
                 f"Não existe {ingredient.pantry_item!r} na despensa. Use o nome exato devolvido "
                 "por pantry_inventory, ou pantry_item nulo se o ingrediente não está lá."
             )
-        converted = convert_measure(
-            ingredient.quantity, ingredient.unit, item.base_unit, item.name, table
-        )
+        converted = convert_measure(scaled, ingredient.unit, item.base_unit, item.name, table)
         shortfall = max(0.0, converted.quantity - item.stock_base)
         checks.append(
             IngredientCheck(
                 name=ingredient.name,
                 pantry_item=item.name,
+                scope=scope,
                 needed=converted.quantity,
                 unit=item.base_unit,
-                conversion=converted.note,
+                conversion=_scaled_note(ingredient, batches, converted.note),
                 stock=item.stock_base,
                 status="have" if shortfall == 0 else "short",
                 shortfall=shortfall,
             )
         )
     return checks
+
+
+def _scaled_note(ingredient: IngredientInput, portions: int, converted_note: str) -> str:
+    """Show the cook the per-portion quantity that produced a batch total."""
+    if portions == 1:
+        return converted_note
+    per_portion = f"{ingredient.quantity:g} {ingredient.unit} por porção"
+    return f"{per_portion} x {portions} porções: {converted_note}"
 
 
 def purchase_for(ingredient: str, purchases: list[Purchase]) -> Purchase | None:

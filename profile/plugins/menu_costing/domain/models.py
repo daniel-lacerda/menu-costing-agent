@@ -93,8 +93,8 @@ class KitchenProfile(BaseModel):
     fridge_space: Literal["pequeno", "medio", "grande"] | None = Field(
         default=None, description="Espaço livre na geladeira"
     )
-    time_per_batch_minutes: int | None = Field(
-        default=None, gt=0, description="Tempo que ela tem por cozinhada, em minutos"
+    time_per_batch: Literal["ate_1h", "de_1h_a_2h", "mais_de_2h"] | None = Field(
+        default=None, description="Tempo que ela tem para cada cozinhada"
     )
     techniques: dict[str, bool] = Field(
         default_factory=dict, description="Técnica culinária e se ela domina"
@@ -110,7 +110,7 @@ class KitchenProfile(BaseModel):
             "blender",
             "fuel",
             "fridge_space",
-            "time_per_batch_minutes",
+            "time_per_batch",
         }
     )
 
@@ -159,6 +159,13 @@ class RecipeInput(BaseModel):
     techniques_required: list[str] = Field(
         default_factory=list, description="Técnicas que a receita exige (ex.: massa fresca)"
     )
+    per_portion_items: list[IngredientInput] = Field(
+        default_factory=list,
+        description=(
+            "O que entra em cada porção vendida além do preparo da página: acompanhamentos e "
+            "embalagem, em quantidade por porção. A tool multiplica pelo rendimento."
+        ),
+    )
 
 
 class Purchase(BaseModel):
@@ -197,6 +204,9 @@ class Consultation(BaseModel):
 class IngredientCheck(BaseModel):
     name: str
     pantry_item: str | None
+    scope: Literal["receita", "porcao"] = Field(
+        default="receita", description="Da receita da página ou adicionado a cada porção"
+    )
     needed: float = Field(description="Quantidade necessária para um lote, na unidade base")
     unit: str
     conversion: str

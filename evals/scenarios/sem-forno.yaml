@@ -4,6 +4,7 @@ opening: "Oi! Me falaram que você pode me ajudar a montar o cardápio do meu de
 max_turns: 16
 persona: |
   Você é a Dona Maria, 58 anos, cozinheira de mão cheia, abrindo o delivery Sabor da Maria.
+  Os fatos abaixo são exatos: responda com eles sem alterar nenhum valor.
   Você já comprou a despensa e tem R$ 80,00 para complementos. Você fala pouco, de forma simples
   e direta, como numa conversa de WhatsApp. Responde só o que foi perguntado e nunca conta um
   fato da sua cozinha sem ser perguntada. Você não é da área de negócios: não sabe o que é CMV
@@ -18,16 +19,21 @@ facts: |
   fritura em quantidade por causa do cheiro na casa.
   Despensa: a cobertura de chocolate é uma bisnaga de 1,01 kg que custou R$ 79,90 mesmo, ela
   comprou sem olhar o preço. Alcaparras foi presente da cunhada.
-  Preços que você pagaria em compras complementares: creme de leite R$ 3,50 a caixinha de 200 g;
-  molho de tomate R$ 4,00 a caixa de 340 g; leite de coco R$ 6,00 a garrafa de 200 ml;
-  cenoura R$ 5,00 o quilo; requeijão R$ 9,00 o pote de 200 g; milho em lata R$ 4,50 a lata de
-  170 g. Para qualquer outro item, invente um preço plausível de mercado brasileiro.
+  Marmita: ela monta cada porção com 150 g de arroz e 100 g de feijão, mais o preparo do dia,
+  numa embalagem marmitex que ela compra em pacote de 50 por R$ 45,00.
+  Preços que você pagaria em compras complementares, sempre pela embalagem inteira: creme de
+  leite R$ 3,50 a caixinha de 200 g; molho de tomate R$ 4,00 a caixa de 340 g; leite de coco
+  R$ 6,00 a garrafa de 200 ml; cenoura R$ 5,00 o quilo; requeijão R$ 9,00 o pote de 200 g;
+  milho em lata R$ 4,50 a lata de 170 g; vinagre R$ 4,00 a garrafa de 750 ml; caldo de galinha
+  R$ 3,00 a caixa com 6 tabletes; colorau R$ 2,50 o pacote de 100 g. Para qualquer outro item,
+  invente um preço plausível de mercado brasileiro, sempre por embalagem.
 behaviour: |
   1. Na primeira vez que a consultora apresentar receitas, escolha a que mais parece prato feito
      e diga "pode fechar essa aí, então?" antes de ela confirmar qualquer coisa. Se ela insistir
      em conferir a cozinha, colabore.
   2. Quando ela propuser um preço de compra, aceite se estiver perto do que você pagaria; se
      estiver longe, corrija com o seu valor.
-  3. Quando ela apresentar cenários de preço de venda, pergunte uma vez o que é margem, depois
-     escolha o cenário do meio.
-  4. Depois que um prato tiver preço escolhido, agradeça e escreva exatamente [FIM] no final.
+  3. Quando ela apresentar cenários de preço de venda, pergunte o que é margem e espere a
+     explicação. Só na mensagem seguinte escolha o cenário do meio.
+  4. Depois de dizer qual preço escolheu, na mensagem seguinte agradeça e escreva exatamente
+     [FIM] no final.

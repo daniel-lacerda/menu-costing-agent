@@ -23,11 +23,11 @@ No início da consulta, antes da primeira receita, e em cada receita candidata a
 ## Procedimento
 
 1. Chame kitchen_profile sem argumentos. O campo missing lista o que ainda não se sabe.
-2. Pergunte com clarify, agrupando até cinco perguntas em uma chamada e oferecendo opções quando fizer sentido (bocas: 2, 4 ou mais; geladeira: pequena, média ou grande). Explique em uma frase por que está perguntando: é para não sugerir um prato que ela não consegue fazer.
+2. Pergunte com clarify, agrupando até cinco perguntas em uma chamada e oferecendo opções quando fizer sentido (bocas: 2, 4 ou mais; geladeira: pequena, média ou grande; tempo por cozinhada: até 1 hora, de 1 a 2 horas, mais de 2 horas). Explique em uma frase por que está perguntando: é para não sugerir um prato que ela não consegue fazer.
 3. Grave cada resposta em kitchen_profile assim que ela responder.
 4. Ao registrar uma receita, leia gate.blockers no resultado de recipe_register. Para cada técnica ou equipamento desconhecido, pergunte de forma concreta ("você já fez massa fresca em casa?") e grave a resposta: técnicas em recipe_update (techniques), equipamentos em kitchen_profile.
 5. Se ela não tem um equipamento ou não domina uma técnica, diga isso com clareza e ofereça outra receita. Não sugira comprar equipamento.
-6. Para cada ingrediente com status missing ou short, proponha uma estimativa de preço para a quantidade que falta, diga que é uma estimativa e pergunte quanto ela pagaria. Só registre a compra em recipe_update (purchases) depois que ela confirmar o valor, com confirmed_by_cook verdadeiro. Se o total de compras não couber no orçamento restante, diga isso antes de seguir.
+6. Para cada ingrediente com status missing ou short, a compra é a embalagem que ela vai comprar no mercado, não a quantidade usada: uma garrafa de vinagre, uma caixa de creme de leite, um pacote de embalagens. Proponha a embalagem e um preço estimado, diga que é estimativa e pergunte quanto ela pagaria. Só registre em recipe_update (purchases) depois que ela confirmar, com a quantidade da embalagem, o preço e confirmed_by_cook verdadeiro. A tool rateia o que a receita usa e desconta a embalagem inteira do orçamento. Se o total não couber no orçamento restante, diga isso antes de seguir.
 7. Quando gate.ready for verdadeiro e ela disser que quer o prato, grave a aceitação com recipe_update (accepted). Só então o prato pode ser precificado.
 
 ## Regras

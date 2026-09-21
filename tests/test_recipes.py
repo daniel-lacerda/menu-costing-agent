@@ -71,6 +71,19 @@ def test_each_unmet_condition_names_its_blocker(
     assert blocker in {b.code for b in report.blockers}
 
 
+def test_per_portion_items_scale_with_the_yield(
+    pantry: list[PantryItem], table: ConversionTable, stroganoff: Recipe
+) -> None:
+    stroganoff.per_portion_items = [
+        IngredientInput(name="arroz", quantity=150, unit="g", pantry_item="Arroz branco tipo 1"),
+        IngredientInput(name="embalagem", quantity=1, unit="un", pantry_item=None),
+    ]
+    checks = {c.name: c for c in check_ingredients(stroganoff, pantry, table)}
+    assert (checks["arroz"].scope, checks["arroz"].needed) == ("porcao", 600)
+    assert checks["arroz"].conversion == "150 g por porção x 4 porções: 600 g"
+    assert (checks["embalagem"].status, checks["embalagem"].shortfall) == ("missing", 4)
+
+
 def test_a_pantry_name_the_model_invented_is_rejected(
     pantry: list[PantryItem], table: ConversionTable
 ) -> None:

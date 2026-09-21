@@ -24,7 +24,7 @@ KITCHEN = {
     "blender": True,
     "fuel": "gas",
     "fridge_space": "medio",
-    "time_per_batch_minutes": 90,
+    "time_per_batch": "mais_de_2h",
 }
 
 RECIPE = {
