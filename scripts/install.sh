@@ -20,6 +20,10 @@ fi
 hermes profile install "${REPO_DIR}/profile" --name sabor-da-maria --alias --yes
 HERMES_HOME="${HOME}/.hermes/profiles/sabor-da-maria" hermes plugins enable menu_costing
 
+# The bundled Langfuse plugin declares no dependency on the SDK. Hermes installs optional SDKs
+# into its own environment with its managed uv; v4 is the SDK current Langfuse organizations accept.
+"${HOME}/.hermes/bin/uv" pip install --quiet --python "${HERMES_SRC}/venv/bin/python" "langfuse>=4,<5"
+
 cat <<MSG
 
 Profile installed. Fill in the keys and start:
