@@ -1,0 +1,28 @@
+name: sabor-da-maria
+version: 0.1.0
+description: "Consultora de cardápio e precificação da Dona Maria, construída sobre o Hermes Agent."
+hermes_requires: ">=0.21.3"
+author: "Daniel Lacerda"
+license: MIT
+
+env_requires:
+  - name: OPENAI_API_KEY
+    description: "OpenAI: modelo principal (gpt-5.6-terra) e auxiliares (gpt-5.6-luna)"
+    required: true
+  - name: FIRECRAWL_API_KEY
+    description: "Firecrawl: busca e extração das páginas de receita"
+    required: true
+  - name: HERMES_LANGFUSE_PUBLIC_KEY
+    description: "Langfuse: tracing das conversas (opcional)"
+    required: false
+  - name: HERMES_LANGFUSE_SECRET_KEY
+    description: "Langfuse: tracing das conversas (opcional)"
+    required: false
+
+distribution_owned:
+  - distribution.yaml
+  - SOUL.md
+  - config.yaml
+  - skills/
+  - plugins/
+  - data/
