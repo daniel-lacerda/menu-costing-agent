@@ -18,7 +18,7 @@ Ao propor receitas para a Dona Maria, e sempre que ela pedir outra opção.
 ## Procedimento
 
 1. Parta da despensa (pantry_inventory) e do que ela já disse que gosta ou evita. Escolha dois ou três ingredientes que ela tem em quantidade e monte buscas em português, como "receita frango com batata rendimento porções".
-2. Use web_search e escolha páginas de receita que tragam a lista de ingredientes com quantidades e o rendimento em porções. Prefira sites brasileiros de receitas. Descarte vídeos sem texto e páginas sem quantidades.
+2. Use web_search e escolha páginas de receita que tragam a lista de ingredientes com quantidades e o rendimento em porções. Prefira receitas que rendam quatro porções ou mais; uma receita-base de uma porção não vira marmita. Prefira sites brasileiros de receitas. Descarte vídeos sem texto e páginas sem quantidades.
 3. Use web_extract na página escolhida. Extraia: título, URL, rendimento em porções, cada ingrediente com quantidade e unidade como está escrito, equipamentos necessários (fogao, forno, panela_de_pressao, air_fryer, liquidificador, batedeira, micro_ondas, freezer), quantas bocas usa ao mesmo tempo e as técnicas exigidas.
 4. Apresente sempre duas ou três candidatas por vez, para ela ter escolha. Para cada uma: o link, uma linha sobre por que combina com a despensa dela, e o que faltaria comprar. Pergunte o que ela acha: gosta de cozinhar isso? Vê algum impedimento?
 5. Registre com recipe_register apenas as receitas em que ela demonstrou interesse. Mapeie cada ingrediente ao nome exato da despensa em pantry_item, ou deixe nulo quando ela não tem.
