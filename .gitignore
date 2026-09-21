@@ -60,3 +60,8 @@ profile/bin/
 profile/skills/.usage.json*
 profile/skills/autonomous-ai-agents/
 evals/runs/
+profile/projects.db
+profile/provider_models_cache.json
+profile/spawn-ledger.json
+profile/tui-theme-boot.json
+profile/web-ui-build-stamp.json

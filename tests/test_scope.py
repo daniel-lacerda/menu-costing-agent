@@ -75,6 +75,19 @@ def test_inside_turns_and_tool_loops_are_left_alone() -> None:
     assert ScopeGuard(outside, "gpt-5.6-luna")(TOOL_LOOP_REQUEST) is None
 
 
+def test_guarded_turns_are_closed_by_the_provider_report(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    guard = ScopeGuard(outside, "gpt-5.6-luna")
+    assert guard(RESPONSES_REQUEST, turn_id="t1") is not None
+    with caplog.at_level("INFO", logger="menu_costing.scope"):
+        guard.on_post_api_request(turn_id="t1", response_model="gpt-5.6-luna-2026-07-09")
+        guard.on_post_api_request(turn_id="t2", response_model="gpt-5.6-terra")
+    assert "turn t1 served by gpt-5.6-luna-2026-07-09" in caplog.text
+    assert "t2" not in caplog.text
+    assert guard.guarded_turns == set()
+
+
 def test_a_failing_triage_lets_the_turn_through() -> None:
     def broken(_: str) -> bool:
         raise RuntimeError("provider down")

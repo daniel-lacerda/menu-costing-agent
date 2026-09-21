@@ -31,4 +31,6 @@ def register(ctx: PluginContext) -> None:
         ctx.register_tool(name=tool.name, toolset=TOOLSET, schema=tool.schema, handler=tool.handler)
     if bool(ctx.get_config("scope_guard", True)):
         model = str(ctx.get_config("scope_model", "gpt-5.6-luna"))
-        ctx.register_middleware("llm_request", ScopeGuard(host_classifier(ctx, model), model))
+        guard = ScopeGuard(host_classifier(ctx, model), model)
+        ctx.register_middleware("llm_request", guard)
+        ctx.register_hook("post_api_request", guard.on_post_api_request)
