@@ -55,3 +55,4 @@ profile/skill-bundles/
 profile/shell-hooks-allowlist.json
 profile/models_dev_cache.*
 profile/channel_directory.json
+profile/.skills_prompt_snapshot.json

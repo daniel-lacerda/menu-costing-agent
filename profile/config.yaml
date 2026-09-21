@@ -1,5 +1,5 @@
 model:
-  provider: openai
+  provider: openai-api
   default: gpt-5.6-terra
 web:
   backend: firecrawl
@@ -9,10 +9,10 @@ tools:
     enabled: "off"
 auxiliary:
   compression:
-    provider: openai
+    provider: openai-api
     model: gpt-5.6-luna
   title_generation:
-    provider: openai
+    provider: openai-api
     model: gpt-5.6-luna
   background_review:
     enabled: false
