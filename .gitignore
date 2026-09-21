@@ -56,3 +56,6 @@ profile/shell-hooks-allowlist.json
 profile/models_dev_cache.*
 profile/channel_directory.json
 profile/.skills_prompt_snapshot.json
+profile/bin/
+profile/skills/.usage.json*
+profile/skills/autonomous-ai-agents/
