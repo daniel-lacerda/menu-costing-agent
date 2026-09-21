@@ -1,0 +1,103 @@
+# Recipe measures accepted by recipe_register and recipe_update, converted to g, ml or un.
+# Values are common Brazilian kitchen approximations. Every conversion applied is echoed back
+# to the cook in the tool result, so an approximation is always visible and correctable.
+
+volume_ml:
+  ml: 1
+  l: 1000
+  litro: 1000
+  colher de sopa: 15
+  colheres de sopa: 15
+  colher de sobremesa: 10
+  colheres de sobremesa: 10
+  colher de chá: 5
+  colheres de chá: 5
+  xícara: 240
+  xícaras: 240
+  xícara de chá: 240
+  copo: 200
+  copos: 200
+
+mass_g:
+  g: 1
+  grama: 1
+  gramas: 1
+  kg: 1000
+  quilo: 1000
+
+count:
+  - un
+  - unidade
+  - unidades
+
+# Keyed by the exact ingredient name in the spreadsheet. density converts volume to mass;
+# piece_g and piece_aliases convert counted pieces ("2 tomates", "3 dentes de alho") to mass.
+items:
+  Arroz branco tipo 1:
+    density_g_per_ml: 0.85
+  Feijão carioquinha:
+    density_g_per_ml: 0.85
+  Feijão preto:
+    density_g_per_ml: 0.85
+  Peito de frango:
+    piece_g: 250
+    piece_aliases: [peito, peitos, filé, filés]
+  Bacon:
+    piece_g: 15
+    piece_aliases: [fatia, fatias]
+  Farinha de trigo:
+    density_g_per_ml: 0.55
+  Farinha de mandioca:
+    density_g_per_ml: 0.60
+  Polenta (fubá):
+    density_g_per_ml: 0.65
+  Batata:
+    piece_g: 150
+    piece_aliases: [batata, batatas]
+  Queijo mussarela:
+    piece_g: 20
+    piece_aliases: [fatia, fatias]
+  Queijo parmesão ralado:
+    density_g_per_ml: 0.40
+  Tomate:
+    piece_g: 120
+    piece_aliases: [tomate, tomates]
+  Cebola:
+    piece_g: 150
+    piece_aliases: [cebola, cebolas]
+  Alho:
+    piece_g: 5
+    piece_aliases: [dente, dentes]
+  Óleo de soja:
+    density_g_per_ml: 0.92
+  Manteiga:
+    density_g_per_ml: 0.96
+  Sal:
+    density_g_per_ml: 1.20
+  Açúcar:
+    density_g_per_ml: 0.85
+  Leite integral:
+    density_g_per_ml: 1.03
+  Couve:
+    piece_g: 30
+    piece_aliases: [folha, folhas]
+  Salsinha (cheiro-verde):
+    piece_g: 5
+    piece_aliases: [ramo, ramos]
+  Caldo de carne (tempero):
+    piece_g: 10
+    piece_aliases: [tablete, tabletes, cubo, cubos]
+  Açafrão em pó (cúrcuma):
+    density_g_per_ml: 0.55
+  Amêndoa fatiada:
+    density_g_per_ml: 0.40
+  Azeite de oliva extra virgem:
+    density_g_per_ml: 0.91
+  Aceto balsâmico:
+    density_g_per_ml: 1.05
+  Canela em pó:
+    density_g_per_ml: 0.50
+  Leite ninho em pó:
+    density_g_per_ml: 0.50
+  Adoçante líquido:
+    density_g_per_ml: 1.00
