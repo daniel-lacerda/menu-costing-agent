@@ -125,27 +125,27 @@ Os scores das camadas 3 e 4 são anexados à sessão correspondente no Langfuse,
 
 Cada rodada da suíte reseta o estado da consulta e a memória do Hermes antes de cada cenário, para que nada de uma Dona Maria simulada vaze para a próxima. Nenhum nome de modelo está escrito na suíte: o modelo principal, o barato (que serve os turnos fora de escopo e interpreta a Dona Maria) e o juiz vêm do `config.yaml` do profile, e cada um se troca por argumento (`--model`, `--cook-model`, `--judge-model`) sem tocar no config.
 
-Última rodada com o modelo entregue e a rodada de comparação com o modelo barato, um run por cenário:
+Última rodada, com a suíte na forma atual (sete verificações, onze critérios), um run por cenário e por modelo:
 
 | Cenário | Modelo | Verificações | Rubrica | Turnos | s/turno p50 | s/turno máx | Cache | Custo (USD) |
 |---|---|---|---|---|---|---|---|---|
-| sem-forno | gpt-5.6-terra | 5/5 | 8/10 | 7 | 13,2 | 111,8 | 96% | 0,73 |
-| fora-de-escopo | gpt-5.6-terra | 5/5 | 7/10 | 7 | 9,6 | 111,1 | 92% | 0,42 |
-| segundo-dia | gpt-5.6-terra | 6/6 | 8/10 | 10 | 4,7 | 31,9 | 93% | 0,28 |
-| sem-forno | gpt-5.6-luna | 5/5 | 9/10 | 5 | 8,1 | 58,1 | 94% | 0,16 |
-| fora-de-escopo | gpt-5.6-luna | 5/5 | 9/10 | 6 | 7,8 | 61,5 | 94% | 0,14 |
-| segundo-dia | gpt-5.6-luna | 6/6 | 8/10 | 4 | 28,2 | 53,6 | 93% | 0,16 |
+| sem-forno | gpt-5.6-terra | 6/6 | 9/11 | 4 | 96,5 | 139,7 | 97% | 0,88 |
+| fora-de-escopo | gpt-5.6-terra | 6/6 | 11/11 | 6 | 8,5 | 75,2 | 91% | 0,32 |
+| segundo-dia | gpt-5.6-terra | 7/7 | 8/11 | 7 | 24,5 | 100,0 | 95% | 0,63 |
+| sem-forno | gpt-5.6-luna | 6/6 | 9/11 | 7 | 40,6 | 69,4 | 96% | 0,27 |
+| fora-de-escopo | gpt-5.6-luna | 6/6 | 10/11 | 6 | 7,7 | 60,0 | 88% | 0,11 |
+| segundo-dia | gpt-5.6-luna | 6/7 | 8/11 | 4 | 32,9 | 65,6 | 93% | 0,14 |
 
 Como ler a tabela:
 
-1. As verificações determinísticas passaram em todas as rodadas, com os dois modelos. São invariantes que o código impõe; se uma falhar, é bug, não variância.
-2. A rubrica varia entre rodadas do mesmo modelo: a rodada anterior do terra marcou 10/10, 9/10 e 8/10 nos mesmos cenários. Com um run por cenário, terra e luna são indistinguíveis na conversa; o custo é de três a seis vezes menor no luna. Em produção, a troca seria decidida com várias repetições por cenário, não com esta amostra.
-3. As reprovações recorrentes, nos dois modelos, são duas: perguntar o preço de uma compra sem propor embalagem e valor, apesar da regra no `SOUL.md` e na skill; e insistir num dado quando a Dona Maria adia a resposta. São os próximos alvos de iteração, registrados com a evidência do juiz nos scores da sessão no Langfuse.
-4. O turno mais longo (até 112 s) é sempre o de pesquisa: três buscas, extração de duas ou três páginas e o registro, com cinco a sete chamadas ao modelo. O Hermes executa em paralelo as tool calls emitidas numa mesma resposta; o que não paraleliza é buscar, extrair, registrar. O gargalo medido é o backend de busca (Firecrawl: p50 de 1,2 s, p95 de 27 s por busca). O prompt cache da OpenAI cobre 92% a 97% da entrada do modelo principal, o que faz o system prompt grande (identidade, guia do Hermes, schemas das tools, cerca de 8 mil tokens) custar 0,2 centavo de dólar por chamada depois da primeira.
+1. As verificações determinísticas passaram em todos os cenários. São invariantes que o código impõe ou que a prosa tem de respeitar contra o dado da tool; se uma falhar, é bug, não variância.
+2. A rubrica varia entre rodadas iguais: nas três rodadas do terra feitas no mesmo dia, o cenário sem-forno marcou 10, 9 e 9 de 11, e o segundo-dia 9, 8 e 8. As reprovações que se repetem são de conversa: perguntar o preço de uma compra em vez de propor embalagem e valor, apesar da regra no `SOUL.md` e na skill; usar "margem" sem explicar na hora; e dizer "registrar" para a Dona Maria. Cada uma está anotada com a evidência do juiz nos scores da sessão no Langfuse, e são os próximos alvos de iteração.
+3. O turno mais longo (até 140 s) é sempre o de pesquisa: buscas, extração de duas ou três páginas e o registro, com cinco a sete chamadas ao modelo. O Hermes executa em paralelo as tool calls emitidas numa mesma resposta; o que não paraleliza é buscar, extrair, registrar. O gargalo medido é o backend de busca (Firecrawl: p50 de 1,2 s, p95 de 27 s por busca). O prompt cache da OpenAI cobre 91% a 97% da entrada do modelo principal, o que faz o system prompt grande (identidade, guia do Hermes, schemas das tools, cerca de 8 mil tokens) custar 0,2 centavo de dólar por chamada depois da primeira.
+4. O custo por consulta depende mais do número de turnos e de pesquisas do que do modelo: a mesma conversa custou de 0,46 a 1,27 USD no terra ao longo do dia.
 
-O modelo entregue continua sendo o terra: no cenário que é o coração do case, a elicitação, ele foi o único a marcar 10/10 em uma rodada, e o custo por consulta fica abaixo de um dólar. O luna fica documentado como a opção de custo, com os números acima.
+O modelo entregue continua sendo o terra, e a rodada do luna mostra por quê. Na rubrica os dois são indistinguíveis com esta amostra, e o luna custa de três a cinco vezes menos. Mas no cenário de retorno o luna registrou uma receita cuja página não tinha extraído (verificação `recipes_come_from_extracted_pages`), quebrando a regra de que toda receita vem de uma página lida, e custeou "1 xícara de vagem" pelo preço do pacote inteiro. São falhas de disciplina com as tools, que o gate não cobre e que uma cozinheira não perceberia. Em produção, a troca seria decidida com várias repetições por cenário e um terceiro modelo como juiz, não com esta amostra.
 
-O que a suíte encontrou nas rodadas anteriores, e que virou correção: receitas registradas sem técnica declarada deixavam o gate sem o que confirmar (hoje o modelo exige ao menos um método de cocção por receita); uma opção "4 ou mais" numa pergunta sobre bocas do fogão fazia a consultora gravar "4" como certeza; valores com quatro casas decimais chegavam à conversa; a memória de preferências de um cenário vazava para o seguinte no harness. Do lado do avaliador: técnicas confirmadas em conversas anteriores não contavam, fatos da planilha eram lidos como assunção, e um cenário que termina antes do preço era cobrado por ele.
+O que a suíte encontrou e virou correção, na ordem em que apareceu: receitas registradas sem técnica declarada deixavam o gate sem o que confirmar (hoje o modelo exige ao menos um método de cocção por receita); uma opção "4 ou mais" numa pergunta sobre bocas do fogão fazia a consultora gravar "4" como certeza; valores com quatro casas decimais chegavam à conversa; a memória de preferências de um cenário vazava para o seguinte no harness; e, na última rodada, a consultora achou a transcrição de outra consulta pelo `session_search` e deu um segundo prato como fechado sem confirmar nada, o que tirou essa tool do toolset. Do lado do avaliador: técnicas confirmadas em conversas anteriores não contavam, fatos da planilha eram lidos como assunção, um cenário que termina antes do preço era cobrado por ele, e a verificação de preço lia a prosa com uma expressão regular em vez de comparar com o resultado da tool.
 
 ## Premissas
 
