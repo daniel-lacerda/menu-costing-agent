@@ -164,25 +164,19 @@ def _pricings(run: RunArtifacts) -> list[ToolCall]:
 
 
 def chosen_price_above_floor(run: RunArtifacts) -> Check:
-    """A recorded price never sits below the floor the tool computed for that recipe."""
-    floors = {
-        str(c.arguments.get("recipe_id")): c.result["pricing"]["floor_price_brl"]
-        for c in _pricings(run)
-        if c.result
-    }
-    if run.menu is None:
-        return Check(name="chosen_price_above_floor", passed=True, evidence="no menu")
-    for recipe in run.menu["recipes"].values():
-        price = recipe.get("chosen_price_brl")
-        if price is None:
-            continue
-        floor = floors.get(recipe["id"])
-        if floor is None or price < floor:
+    """A price recorded in this run never sits below the floor dish_price had computed for it."""
+    floors: dict[str, float] = {}
+    for call in _pricings(run):
+        assert call.result is not None
+        rid = str(call.arguments.get("recipe_id"))
+        chosen = call.arguments.get("chosen_price_brl")
+        if chosen is not None and (rid not in floors or chosen < floors[rid]):
             return Check(
                 name="chosen_price_above_floor",
                 passed=False,
-                evidence=f"{recipe['id']} priced {price} with tool floor {floor}",
+                evidence=f"{rid} priced {chosen} with tool floor {floors.get(rid)}",
             )
+        floors[rid] = call.result["pricing"]["floor_price_brl"]
     return Check(
         name="chosen_price_above_floor",
         passed=True,
@@ -191,10 +185,12 @@ def chosen_price_above_floor(run: RunArtifacts) -> Check:
 
 
 def prices_told_match_tool(run: RunArtifacts, expected: bool) -> Check:
-    """The floor and every scenario price she hears are the ones dish_price returned, verbatim.
+    """The prices she hears are the ones dish_price returned, verbatim.
 
-    The consultant explains numbers; it must not produce them. Reading the prose here is the
-    point: it is compared against the tool result of the same turn.
+    A call that presents the pricing must be followed by a reply with the floor and every
+    scenario; a call that records her choice must be followed by a reply with that price. The
+    consultant explains numbers; it must not produce them. Reading the prose here is the point:
+    it is compared against the tool result of the same turn.
     """
     pricings = _pricings(run)
     if not pricings:
@@ -206,9 +202,13 @@ def prices_told_match_tool(run: RunArtifacts, expected: bool) -> Check:
     for call in pricings:
         assert call.result is not None
         told = run.consultant_text(call.turn)
-        amounts = [call.result["pricing"]["floor_price_brl"]] + [
-            s["price_brl"] for s in call.result["pricing"]["scenarios"]
-        ]
+        chosen = call.arguments.get("chosen_price_brl")
+        if chosen is not None:
+            amounts = [float(chosen)]
+        else:
+            amounts = [call.result["pricing"]["floor_price_brl"]] + [
+                s["price_brl"] for s in call.result["pricing"]["scenarios"]
+            ]
         absent = [a for a in amounts if not re.search(rf"R\$\s?{_brl(a)}", told)]
         if absent:
             return Check(
@@ -219,7 +219,7 @@ def prices_told_match_tool(run: RunArtifacts, expected: bool) -> Check:
     return Check(
         name="prices_told_match_tool",
         passed=True,
-        evidence=f"{len(pricings)} pricing replies repeat the tool's floor and scenarios",
+        evidence=f"{len(pricings)} pricing replies repeat the tool's numbers",
     )
 
 

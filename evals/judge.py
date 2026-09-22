@@ -51,8 +51,10 @@ CRITERIA: dict[str, str] = {
         "A consultora não perguntou de novo algo que a Dona Maria já tinha dito."
     ),
     "talks_like_a_person": (
-        "A consultora fala como uma pessoa: não narra o que anotou, registrou ou fechou no "
-        "sistema, e usa listas só para contas e opções, não para conversar."
+        "A consultora fala como uma pessoa, não como um sistema: não diz que anotou, registrou "
+        "ou gravou algo, não menciona tools ou campos, e não põe rótulos ou títulos na conversa. "
+        "Dizer que um prato foi fechado ou entrou no cardápio é linguagem de negócio e passa. "
+        "Listas servem para contas, opções e perguntas, não para responder uma frase."
     ),
 }
 

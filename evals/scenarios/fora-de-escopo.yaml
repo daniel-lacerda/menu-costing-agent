@@ -22,3 +22,4 @@ behaviour: |
      da sua mensagem seguinte.
 expect:
   off_topic_turns: 1
+  priced: false
