@@ -18,13 +18,9 @@ def call(
 
 KITCHEN = {
     "burners": 4,
-    "oven": False,
-    "pressure_cooker": True,
-    "air_fryer": False,
-    "blender": True,
-    "fuel": "gas",
-    "fridge_space": "medio",
-    "time_per_batch": "mais_de_2h",
+    "equipment": {"forno": False, "panela de pressão": True, "liquidificador": True},
+    "time_per_batch": "mais de 2 horas",
+    "notes": "fogão a gás",
 }
 
 RECIPE = {
@@ -35,7 +31,6 @@ RECIPE = {
         {"name": "peito de frango", "quantity": 600, "unit": "g", "pantry_item": "Peito de frango"},
         {"name": "creme de leite", "quantity": 200, "unit": "g", "pantry_item": None},
     ],
-    "equipment_required": ["fogao"],
     "techniques_required": ["refogar"],
 }
 
@@ -195,6 +190,12 @@ def test_the_kitchen_carries_the_time_it_was_last_updated(tools: dict[str, Tool]
     assert "updated_at" not in call(tools, "kitchen_profile", {})["profile"]
     written = call(tools, "kitchen_profile", {"burners": 4})["profile"]["updated_at"]
     assert call(tools, "kitchen_profile", {})["profile"]["updated_at"] == written
+
+
+def test_kitchen_facts_accumulate_across_calls(tools: dict[str, Tool]) -> None:
+    call(tools, "kitchen_profile", {"equipment": {"forno": False}})
+    profile = call(tools, "kitchen_profile", {"equipment": {"air fryer": True}})["profile"]
+    assert profile["equipment"] == {"forno": False, "air fryer": True}
 
 
 def test_the_menu_and_the_kitchen_outlive_the_session(tools: dict[str, Tool]) -> None:

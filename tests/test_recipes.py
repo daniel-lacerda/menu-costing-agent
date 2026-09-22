@@ -49,6 +49,10 @@ def test_gate_is_ready_only_when_everything_is_confirmed(
         (lambda r, k: setattr(r, "liked", False), "not_liked"),
         (lambda r, k: setattr(k, "time_per_batch", None), "kitchen_unknown:time_per_batch"),
         (lambda r, k: setattr(r, "equipment_required", ["forno"]), "equipment_missing:forno"),
+        (
+            lambda r, k: setattr(r, "equipment_required", ["batedeira"]),
+            "equipment_unknown:batedeira",
+        ),
         (lambda r, k: setattr(r, "burners_needed", 5), "burners_insufficient"),
         (
             lambda r, k: setattr(r, "techniques_required", ["massa fresca"]),
@@ -77,18 +81,40 @@ def test_each_unmet_condition_names_its_blocker(
     assert blocker in {b.code for b in report.blockers}
 
 
-def test_a_stove_dish_does_not_wait_for_answers_about_other_equipment(
+def test_a_dish_waits_only_for_what_it_uses(
     pantry: list[PantryItem],
     table: ConversionTable,
     stroganoff: Recipe,
     complete_kitchen: KitchenProfile,
 ) -> None:
-    complete_kitchen.oven = None
-    complete_kitchen.air_fryer = None
-    complete_kitchen.fridge_space = None
+    complete_kitchen.equipment = {}
     checks = check_ingredients(stroganoff, pantry, table)
     assert evaluate_gate(stroganoff, complete_kitchen, checks, table).ready
-    assert complete_kitchen.missing() == ["oven", "air_fryer", "fridge_space"]
+    assert complete_kitchen.missing() == []
+
+
+def test_equipment_and_techniques_match_however_she_spelled_them(
+    pantry: list[PantryItem],
+    table: ConversionTable,
+    stroganoff: Recipe,
+    complete_kitchen: KitchenProfile,
+) -> None:
+    stroganoff.equipment_required = ["Panela de Pressao"]
+    stroganoff.techniques_required = ["REFOGAR"]
+    checks = check_ingredients(stroganoff, pantry, table)
+    assert evaluate_gate(stroganoff, complete_kitchen, checks, table).ready
+
+
+def test_the_stove_is_declared_by_burners_not_as_equipment() -> None:
+    with pytest.raises(ValueError, match="burners_needed"):
+        RecipeInput(
+            title="x",
+            url="https://example.org/x",
+            yield_portions=2,
+            ingredients=[IngredientInput(name="arroz", quantity=200, unit="g")],
+            equipment_required=["fogão"],
+            techniques_required=["cozinhar"],
+        )
 
 
 def test_an_unknown_technique_blocker_names_the_ones_already_confirmed(
@@ -104,7 +130,7 @@ def test_an_unknown_technique_blocker_names_the_ones_already_confirmed(
         for b in evaluate_gate(stroganoff, complete_kitchen, checks, table).blockers
     }
     assert "technique_unknown:Refogar" not in codes
-    assert "já confirmadas por ela: refogar" in codes["technique_unknown:assar"]
+    assert "Já confirmado por ela: refogar" in codes["technique_unknown:assar"]
 
 
 def test_the_same_name_cannot_appear_twice_in_a_recipe() -> None:
@@ -163,7 +189,6 @@ def test_a_purchase_in_another_measure_of_the_same_kind_is_converted(
         url="https://example.org/x",
         yield_portions=1,
         ingredients=[IngredientInput(name="vinho", quantity=0.5, unit="xícara de chá")],
-        equipment_required=["fogao"],
         techniques_required=["refogar"],
     )
     checks = check_ingredients(recipe, pantry, table)
@@ -206,7 +231,6 @@ def test_a_pantry_name_the_model_invented_is_rejected(
         ingredients=[
             IngredientInput(name="creme", quantity=1, unit="un", pantry_item="Creme de leite")
         ],
-        equipment_required=["fogao"],
         techniques_required=["refogar"],
     )
     with pytest.raises(Exception, match="nome exato"):

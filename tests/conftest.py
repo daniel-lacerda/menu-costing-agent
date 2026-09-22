@@ -40,14 +40,15 @@ def pantry() -> list[PantryItem]:
 def complete_kitchen() -> KitchenProfile:
     return KitchenProfile(
         burners=4,
-        oven=False,
-        pressure_cooker=True,
-        air_fryer=False,
-        blender=True,
-        fuel="gas",
-        fridge_space="medio",
-        time_per_batch="mais_de_2h",
+        equipment={
+            "forno": False,
+            "panela de pressão": True,
+            "air fryer": False,
+            "liquidificador": True,
+        },
         techniques={"refogar": True, "massa fresca": False},
+        time_per_batch="mais de 2 horas",
+        notes="fogão a gás; geladeira média",
     )
 
 
@@ -65,7 +66,6 @@ def stroganoff() -> Recipe:
             IngredientInput(name="cebola", quantity=1, unit="cebola", pantry_item="Cebola"),
             IngredientInput(name="creme de leite", quantity=200, unit="g", pantry_item=None),
         ],
-        equipment_required=["fogao"],
         burners_needed=2,
         techniques_required=["refogar"],
         liked=True,

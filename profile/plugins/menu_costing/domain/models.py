@@ -59,82 +59,57 @@ class PantryAmendment(BaseModel):
 # ---------------------------------------------------------------------------
 # Kitchen
 
-Equipment = Literal[
-    "fogao",
-    "forno",
-    "panela_de_pressao",
-    "air_fryer",
-    "liquidificador",
-    "batedeira",
-    "micro_ondas",
-    "freezer",
-]
-
 
 class KitchenProfile(BaseModel):
-    burners: int | None = Field(default=None, ge=0, description="Bocas do fogão (0 = sem fogão)")
-    oven: bool | None = Field(default=None, description="Tem forno")
-    pressure_cooker: bool | None = Field(default=None, description="Tem panela de pressão")
-    air_fryer: bool | None = Field(default=None, description="Tem air fryer")
-    blender: bool | None = Field(default=None, description="Tem liquidificador")
-    mixer: bool | None = Field(default=None, description="Tem batedeira")
-    microwave: bool | None = Field(default=None, description="Tem micro-ondas")
-    freezer: bool | None = Field(default=None, description="Tem freezer")
-    fuel: Literal["gas", "eletrico", "ambos"] | None = Field(
-        default=None, description="Fogão a gás, elétrico ou ambos"
-    )
-    fridge_space: Literal["pequeno", "medio", "grande"] | None = Field(
-        default=None, description="Espaço livre na geladeira"
-    )
-    time_per_batch: Literal["ate_1h", "de_1h_a_2h", "mais_de_2h"] | None = Field(
-        default=None, description="Tempo que ela tem para cada cozinhada"
+    """What the statement asks the consultant to find out before proposing a dish.
+
+    Three groups, as in the statement: equipment, skills, operational constraints. Names are
+    free text the model chooses, matched case- and accent-insensitively; the stove is the one
+    piece of equipment measured by a number, because recipes need burners at the same time.
+    """
+
+    burners: int | None = Field(default=None, ge=0, description="Bocas do fogão; 0 se não tem")
+    equipment: dict[str, bool] = Field(
+        default_factory=dict,
+        description=(
+            "Equipamento e se ela tem: forno, panela de pressão, air fryer, liquidificador..."
+        ),
     )
     techniques: dict[str, bool] = Field(
-        default_factory=dict, description="Técnica culinária e se ela domina"
+        default_factory=dict, description="Técnica ou habilidade e se ela domina"
     )
-    notes: str | None = Field(default=None, description="Outras limitações ditas por ela")
+    time_per_batch: str | None = Field(
+        default=None, description="Tempo que ela tem para cada cozinhada, como ela disse"
+    )
+    notes: str | None = Field(
+        default=None, description="Restrições operacionais: gás ou elétrico, geladeira, horários"
+    )
 
-    # Asked on the first visit because they shape which recipes to propose.
-    ELICITED: ClassVar[tuple[str, ...]] = (
-        "burners",
-        "oven",
-        "pressure_cooker",
-        "air_fryer",
-        "blender",
-        "fuel",
-        "fridge_space",
-        "time_per_batch",
-    )
-    # Block every dish when unknown. Equipment is checked per recipe, so a stove dish does not
-    # wait for an answer about the air fryer.
-    REQUIRED: ClassVar[frozenset[str]] = frozenset({"burners", "time_per_batch"})
+    # Unknown, these block every dish: a recipe needs the stove and a slot in her day.
+    REQUIRED: ClassVar[tuple[str, ...]] = ("burners", "time_per_batch")
 
     def missing(self) -> list[str]:
-        return [name for name in self.ELICITED if getattr(self, name) is None]
+        return [name for name in self.REQUIRED if getattr(self, name) is None]
 
-    def missing_required(self) -> list[str]:
-        return [name for name in self.missing() if name in self.REQUIRED]
+    def has(self, equipment: str) -> bool | None:
+        return _lookup(self.equipment, equipment)
+
+    def masters(self, technique: str) -> bool | None:
+        return _lookup(self.techniques, technique)
+
+    def owned(self) -> list[str]:
+        return sorted(name for name, yes in self.equipment.items() if yes)
 
     def mastered(self) -> list[str]:
-        return sorted(name for name, ok in self.techniques.items() if ok)
-
-    def has(self, equipment: Equipment) -> bool | None:
-        if equipment == "fogao":
-            return None if self.burners is None else self.burners > 0
-        value: bool | None = getattr(self, _EQUIPMENT_FIELD[equipment])
-        return value
+        return sorted(name for name, yes in self.techniques.items() if yes)
 
 
-_EQUIPMENT_FIELD: dict[Equipment, str] = {
-    "fogao": "burners",
-    "forno": "oven",
-    "panela_de_pressao": "pressure_cooker",
-    "air_fryer": "air_fryer",
-    "liquidificador": "blender",
-    "batedeira": "mixer",
-    "micro_ondas": "microwave",
-    "freezer": "freezer",
-}
+def _lookup(facts: dict[str, bool], name: str) -> bool | None:
+    key = fold(name)
+    return next((value for known, value in facts.items() if fold(known) == key), None)
+
+
+STOVE_NAMES = frozenset({"fogao", "fogao a gas", "fogao eletrico", "cooktop", "boca", "bocas"})
 
 
 # ---------------------------------------------------------------------------
@@ -155,11 +130,16 @@ class RecipeInput(BaseModel):
     url: str = Field(description="Página de onde a receita foi extraída")
     yield_portions: int = Field(gt=0, description="Porções que a receita rende")
     ingredients: list[IngredientInput] = Field(min_length=1)
-    equipment_required: list[Equipment] = Field(
+    equipment_required: list[str] = Field(
         default_factory=list,
-        description="Equipamentos que o preparo usa; vazio só para pratos sem cocção",
+        description=(
+            "Equipamentos que o preparo usa além do fogão (forno, panela de pressão, air fryer, "
+            "liquidificador...). O fogão entra em burners_needed."
+        ),
     )
-    burners_needed: int = Field(default=1, ge=0, description="Bocas usadas ao mesmo tempo")
+    burners_needed: int = Field(
+        default=1, ge=0, description="Bocas do fogão usadas ao mesmo tempo; 0 para prato sem fogão"
+    )
     techniques_required: list[str] = Field(
         min_length=1,
         description=(
@@ -174,6 +154,14 @@ class RecipeInput(BaseModel):
             "em quantidade por porção. A tool multiplica pelo rendimento."
         ),
     )
+
+    @model_validator(mode="after")
+    def _stove_is_counted_not_listed(self) -> RecipeInput:
+        """The stove is checked by burners; as equipment it would never match her profile."""
+        for name in self.equipment_required:
+            if fold(name) in STOVE_NAMES:
+                raise ValueError(f"{name!r} não entra em equipment_required; use burners_needed")
+        return self
 
     @model_validator(mode="after")
     def _names_are_unique(self) -> RecipeInput:

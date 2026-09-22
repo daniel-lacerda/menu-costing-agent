@@ -122,8 +122,9 @@ class ConsultationTools:
     def kitchen_profile(self, args: KitchenProfile, **kwargs: Any) -> dict[str, Any]:
         current = self._kitchen()
         patch = args.model_dump(exclude_unset=True)
-        if "techniques" in patch:
-            patch["techniques"] = {**current.techniques, **patch["techniques"]}
+        for facts in ("equipment", "techniques"):
+            if facts in patch:
+                patch[facts] = {**getattr(current, facts), **patch[facts]}
         profile: KitchenProfile = current.model_copy(update=patch)
         if patch:
             profile = self.store.save_kitchen(profile)
@@ -275,9 +276,10 @@ _DESCRIPTIONS: dict[str, str] = {
         "preço pago."
     ),
     "kitchen_profile": (
-        "Lê ou atualiza o perfil da cozinha: equipamentos, técnicas que ela domina e limitações. "
-        "Chame sem argumentos para ler. Devolve em missing o que ainda não se sabe da cozinha e "
-        "em updated_at quando ela falou dela pela última vez."
+        "Lê ou atualiza o perfil da cozinha: bocas do fogão, equipamentos e técnicas (nome e sim "
+        "ou não, somados ao que já está gravado), tempo por cozinhada e restrições. Chame sem "
+        "argumentos para ler. Devolve em missing o que ainda falta para qualquer prato e em "
+        "updated_at quando ela falou da cozinha pela última vez."
     ),
     "recipe_register": (
         "Registra uma receita candidata extraída de uma página real e a compara com a despensa e a "

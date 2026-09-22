@@ -1,20 +1,18 @@
 {
   "burners": 4,
-  "oven": false,
-  "pressure_cooker": true,
-  "air_fryer": false,
-  "blender": true,
-  "mixer": null,
-  "microwave": true,
-  "freezer": null,
-  "fuel": "gas",
-  "fridge_space": "medio",
-  "time_per_batch": "mais_de_2h",
+  "equipment": {
+    "forno": false,
+    "panela de pressão": true,
+    "air fryer": false,
+    "liquidificador": true,
+    "micro-ondas": true
+  },
   "techniques": {
     "cozinhar na pressão": true,
     "desfiar carne": true,
     "refogar": true
   },
-  "notes": null,
+  "time_per_batch": "até 3 horas por cozinhada",
+  "notes": "fogão a gás; geladeira média",
   "updated_at": "2026-09-21T20:15:00Z"
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 from .errors import DomainError
 from .models import (
@@ -130,10 +131,14 @@ def carry_purchases(
 def evaluate_gate(
     recipe: Recipe, profile: KitchenProfile, checks: list[IngredientCheck], table: ConversionTable
 ) -> GateReport:
-    """Everything the statement requires before the cook commits to a dish."""
+    """Everything the statement requires before the cook commits to a dish.
+
+    Unknown equipment and techniques are blockers, not assumptions: the blocker names what she
+    already confirmed so the model asks about the rest with the same words she used.
+    """
     blockers: list[Blocker] = []
 
-    for field in profile.missing_required():
+    for field in profile.missing():
         blockers.append(Blocker(code=f"kitchen_unknown:{field}", message=f"Falta saber: {field}."))
 
     if recipe.liked is None:
@@ -141,19 +146,6 @@ def evaluate_gate(
     elif not recipe.liked:
         blockers.append(Blocker(code="not_liked", message="Ela não gostou desta receita."))
 
-    for equipment in recipe.equipment_required:
-        has = profile.has(equipment)
-        if has is None:
-            blockers.append(
-                Blocker(
-                    code=f"equipment_unknown:{equipment}",
-                    message=f"Falta saber se ela tem {equipment}.",
-                )
-            )
-        elif not has:
-            blockers.append(
-                Blocker(code=f"equipment_missing:{equipment}", message=f"Ela não tem {equipment}.")
-            )
     if profile.burners is not None and recipe.burners_needed > profile.burners:
         blockers.append(
             Blocker(
@@ -164,26 +156,12 @@ def evaluate_gate(
             )
         )
 
-    known = {fold(name): mastered for name, mastered in profile.techniques.items()}
-    on_file = ", ".join(profile.mastered()) or "nenhuma"
-    for technique in recipe.techniques_required:
-        mastered = known.get(fold(technique))
-        if mastered is None:
-            blockers.append(
-                Blocker(
-                    code=f"technique_unknown:{technique}",
-                    message=(
-                        f"Falta saber se ela domina: {technique}. "
-                        f"Técnicas já confirmadas por ela: {on_file}."
-                    ),
-                )
-            )
-        elif not mastered:
-            blockers.append(
-                Blocker(
-                    code=f"technique_missing:{technique}", message=f"Ela não domina: {technique}."
-                )
-            )
+    blockers += _confirmations(
+        "equipment", recipe.equipment_required, profile.has, profile.owned(), "tem"
+    )
+    blockers += _confirmations(
+        "technique", recipe.techniques_required, profile.masters, profile.mastered(), "domina"
+    )
 
     for check in checks:
         if check.shortfall > 0 and purchase_for(check.name, recipe.purchases) is None:
@@ -198,6 +176,33 @@ def evaluate_gate(
             )
 
     return GateReport(ready=not blockers, blockers=blockers, purchases=recipe.purchases)
+
+
+def _confirmations(
+    kind: str,
+    required: list[str],
+    lookup: Callable[[str], bool | None],
+    confirmed: list[str],
+    verb: str,
+) -> list[Blocker]:
+    on_file = ", ".join(confirmed) or "nenhum"
+    blockers: list[Blocker] = []
+    for name in required:
+        value = lookup(name)
+        if value is None:
+            blockers.append(
+                Blocker(
+                    code=f"{kind}_unknown:{name}",
+                    message=(
+                        f"Falta saber se ela {verb}: {name}. Já confirmado por ela: {on_file}."
+                    ),
+                )
+            )
+        elif not value:
+            blockers.append(
+                Blocker(code=f"{kind}_missing:{name}", message=f"Ela não {verb}: {name}.")
+            )
+    return blockers
 
 
 def recipe_id(existing: dict[str, Recipe], url: str) -> str:
