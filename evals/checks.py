@@ -81,10 +81,14 @@ class RunArtifacts(BaseModel):
 
 
 def _json_object(raw: str | None) -> dict[str, Any] | None:
-    """Plugin tools answer with a JSON object; native tools (web search) answer with text."""
+    """Plugin tools answer with a JSON object; native tools (web search) answer with text.
+
+    Hermes may append a warning after the object when a tool keeps failing in one turn, so
+    only the leading object is decoded.
+    """
     if raw is None or not raw.lstrip().startswith("{"):
         return None
-    parsed = json.loads(raw)
+    parsed, _ = json.JSONDecoder().raw_decode(raw.lstrip())
     return parsed if isinstance(parsed, dict) else None
 
 
