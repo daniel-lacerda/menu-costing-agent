@@ -30,7 +30,7 @@
         {"ingredient": "creme de leite", "quantity": 200, "unit": "g", "price_brl": 3.5, "confirmed_by_cook": true, "packages": 1}
       ],
       "accepted": true,
-      "chosen_price_brl": 12.9
+      "chosen_price_brl": 10.81
     }
   }
 }
