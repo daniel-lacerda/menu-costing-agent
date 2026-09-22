@@ -21,7 +21,7 @@ git clone https://github.com/daniel-lacerda/menu-costing-agent.git
 cd menu-costing-agent
 ./scripts/install.sh
 cp profile/.env.example ~/.hermes/profiles/sabor-da-maria/.env   # preencha as chaves
-sabor-da-maria chat
+sabor-da-maria chat        # ou: hermes -p sabor-da-maria chat
 ```
 
 O script instala o Hermes na versão fixada (se ainda não existir), instala este profile como `sabor-da-maria` com um comando de atalho, habilita o plugin de custeio (o que instala `openpyxl` no ambiente do Hermes pelo mecanismo oficial de dependências de plugin) e instala o SDK do Langfuse. As chaves do Langfuse são opcionais: sem elas o plugin não faz nada.
@@ -121,9 +121,17 @@ Os scores das camadas 3 e 4 são anexados à sessão correspondente no Langfuse,
 ./scripts/evaluate.sh scenarios/sem-forno.yaml scenarios/fora-de-escopo.yaml scenarios/segundo-dia.yaml
 ```
 
-Resultados da última rodada:
+Cada rodada da suíte reseta o estado da consulta e a memória do Hermes antes de cada cenário, para que nada de uma Dona Maria simulada vaze para a próxima. Resultados da última rodada:
 
-RESULTS_TABLE
+| Cenário | Verificações determinísticas | Rubrica de conversa | O que reprovou |
+|---|---|---|---|
+| sem-forno | 5/5 | 10/10 | nada |
+| fora-de-escopo | 5/5 | 9/10 | o preço foi dado sem a demonstração de custos por ingrediente, taxa e piso |
+| segundo-dia | 6/6 | 8/10 | receitas apresentadas sem o link no texto (o registro tinha a URL); uma pergunta repetida sobre a quantidade de louro |
+
+As garantias que o código impõe passaram em todas as rodadas. As reprovações de rubrica são variância de conversa do modelo, ficam registradas com a evidência do juiz (também nos scores da sessão no Langfuse) e são o próximo alvo de iteração nas skills.
+
+O que a suíte encontrou nas rodadas anteriores, e que virou correção: receitas registradas sem técnica declarada deixavam o gate sem o que confirmar (hoje o modelo exige ao menos um método de cocção por receita); uma opção "4 ou mais" numa pergunta sobre bocas do fogão fazia a consultora gravar "4" como certeza; valores com quatro casas decimais chegavam à conversa; a memória de preferências de um cenário vazava para o seguinte no harness. Do lado do avaliador: técnicas confirmadas em conversas anteriores não contavam, fatos da planilha eram lidos como assunção, e um cenário que termina antes do preço era cobrado por ele.
 
 ## Premissas
 
