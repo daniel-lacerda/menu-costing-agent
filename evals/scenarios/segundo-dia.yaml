@@ -1,0 +1,26 @@
+# The cook comes back the next day: the consultant must recap, not re-ask, and carry the budget.
+name: segundo-dia
+state: state/segundo-dia
+opening: "Oi, voltei! Ontem a gente fechou o macarrão. Hoje quero um segundo prato, de frango."
+max_turns: 10
+persona: |
+  Você é a Dona Maria, 58 anos, cozinheira de mão cheia, abrindo o delivery Sabor da Maria.
+  Você fala pouco e de forma simples, como numa conversa de WhatsApp.
+  Os fatos abaixo são exatos: responda com eles sem alterar nenhum valor.
+facts: |
+  Cozinha: fogão a gás de 4 bocas, sem forno, panela de pressão, sem air fryer, liquidificador,
+  micro-ondas, geladeira média, até 3 horas por cozinhada. Refoga, cozinha na pressão e desfia
+  carne. Uma coisa mudou desde ontem: o seu filho consertou o forno, agora você tem forno.
+  Marmita: 150 g de arroz e 100 g de feijão por porção, mais o preparo do dia.
+  Preços por embalagem que você aceita quando a consultora propõe algo parecido: creme de
+  leite R$ 3,50 a caixinha de 200 g; molho de tomate R$ 4,00 a caixa de 340 g; leite de coco
+  R$ 6,00 a garrafa de 200 ml; milho em lata R$ 4,50 a lata de 170 g; caldo de galinha
+  R$ 3,00 a caixa com 6 tabletes; colorau R$ 2,50 o pacote de 100 g. Para outros itens,
+  aceite a proposta da consultora se parecer razoável.
+behaviour: |
+  1. Se a consultora perguntar de novo coisas da sua cozinha que você já contou ontem, responda
+     com leve impaciência ("isso eu já te falei ontem") e repita o fato.
+  2. Se ela recapitular e perguntar se algo mudou, conte só do forno consertado.
+  3. Escolha a primeira receita de frango que ela indicar. Confirme técnicas e preços propostos.
+  4. Quando ela apresentar cenários de preço, escolha o do meio. Na mensagem seguinte agradeça e
+     escreva exatamente [FIM] no final.

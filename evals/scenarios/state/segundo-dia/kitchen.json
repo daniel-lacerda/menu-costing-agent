@@ -1,0 +1,15 @@
+{
+  "burners": 4,
+  "oven": false,
+  "pressure_cooker": true,
+  "air_fryer": false,
+  "blender": true,
+  "mixer": null,
+  "microwave": true,
+  "freezer": null,
+  "fuel": "gas",
+  "fridge_space": "medio",
+  "time_per_batch": "mais_de_2h",
+  "techniques": {"cozinhar na pressão": true, "desfiar carne": true, "refogar": true},
+  "notes": null
+}

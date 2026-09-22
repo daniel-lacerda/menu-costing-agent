@@ -107,11 +107,10 @@ def test_accepted_dish_is_priced_and_the_budget_is_committed(tools: dict[str, To
     assert priced["chosen_price_brl"] == 9.9
 
 
-def test_sessions_are_isolated_but_the_kitchen_is_shared(tools: dict[str, Tool]) -> None:
-    call(tools, "kitchen_profile", KITCHEN, session="a")
-    call(tools, "recipe_register", RECIPE, session="a")
-    assert call(tools, "kitchen_profile", {}, session="b")["missing"] == []
-    assert (
-        "Registre-a"
-        in call(tools, "recipe_update", {"recipe_id": "r1", "liked": True}, session="b")["error"]
-    )
+def test_the_menu_and_the_kitchen_outlive_the_session(tools: dict[str, Tool]) -> None:
+    call(tools, "kitchen_profile", KITCHEN, session="monday")
+    call(tools, "recipe_register", RECIPE, session="monday")
+    assert call(tools, "kitchen_profile", {}, session="tuesday")["missing"] == []
+    later = call(tools, "recipe_update", {"recipe_id": "r1", "liked": True}, session="tuesday")
+    assert later["recipe_id"] == "r1"
+    assert later["budget"]["total_brl"] == 80.0

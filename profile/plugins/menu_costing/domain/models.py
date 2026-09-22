@@ -189,6 +189,7 @@ class Purchase(PurchaseInput):
 
 class Recipe(RecipeInput):
     id: str
+    session_id: str = Field(description="Sessão em que a receita foi registrada")
     registered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     liked: bool | None = None
     purchases: list[Purchase] = Field(default_factory=list)
@@ -196,8 +197,9 @@ class Recipe(RecipeInput):
     chosen_price_brl: float | None = None
 
 
-class Consultation(BaseModel):
-    session_id: str
+class Menu(BaseModel):
+    """The launch menu: one ledger for the cook, shared by every conversation about it."""
+
     budget_brl: float = Field(ge=0)
     recipes: dict[str, Recipe] = Field(default_factory=dict)
 

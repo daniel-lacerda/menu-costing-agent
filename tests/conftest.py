@@ -56,6 +56,7 @@ def stroganoff() -> Recipe:
     """A liked recipe whose gate closes: one item short, one missing, both covered by purchases."""
     return Recipe(
         id="r1",
+        session_id="test",
         title="Estrogonofe de carne",
         url="https://example.org/estrogonofe",
         yield_portions=4,

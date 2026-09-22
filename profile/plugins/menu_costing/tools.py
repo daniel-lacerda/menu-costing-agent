@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,8 +15,8 @@ from pydantic import BaseModel, Field, ValidationError
 from .domain.errors import DomainError
 from .domain.ledger import Store
 from .domain.models import (
-    Consultation,
     KitchenProfile,
+    Menu,
     PantryAmendment,
     PurchaseInput,
     Recipe,
@@ -90,8 +91,7 @@ class ConsultationTools:
     # -- pantry ---------------------------------------------------------------
 
     def pantry_inventory(self, args: PantryInventoryArgs, **kwargs: Any) -> dict[str, Any]:
-        consultation = self._consultation(kwargs)
-        return {"items": self._pantry(), "budget": _budget(consultation)}
+        return {"items": self._pantry(), "budget": _budget(self._menu())}
 
     def pantry_amend(self, args: PantryAmendment, **kwargs: Any) -> dict[str, Any]:
         if not args.stated_by_cook:
@@ -120,29 +120,34 @@ class ConsultationTools:
         updated = current.model_copy(update=patch)
         if patch:
             self.store.save_kitchen(updated)
-        return {"profile": updated, "missing": updated.missing()}
+        return {
+            "profile": updated,
+            "missing": updated.missing(),
+            "last_updated": self.store.kitchen_updated_at(),
+        }
 
     # -- recipes --------------------------------------------------------------
 
     def recipe_register(self, args: RecipeInput, **kwargs: Any) -> dict[str, Any]:
-        consultation = self._consultation(kwargs)
+        menu = self._menu()
         checks = check_ingredients(args, self._pantry(), self.table)
-        rid = recipe_id(consultation.recipes, args.url)
-        previous = consultation.recipes.get(rid)
+        rid = recipe_id(menu.recipes, args.url)
+        previous = menu.recipes.get(rid)
         recipe = Recipe(
             id=rid,
+            session_id=_session_id(kwargs),
             liked=previous.liked if previous else None,
             purchases=previous.purchases if previous else [],
             **args.model_dump(),
         )
-        consultation.recipes[rid] = recipe
-        self.store.save_consultation(consultation)
+        menu.recipes[rid] = recipe
+        self.store.save_menu(menu)
         gate = evaluate_gate(recipe, self.store.load_kitchen(), checks, self.table)
         return {"recipe_id": rid, "ingredients": checks, "gate": gate}
 
     def recipe_update(self, args: RecipeUpdateArgs, **kwargs: Any) -> dict[str, Any]:
-        consultation = self._consultation(kwargs)
-        recipe = _recipe(consultation, args.recipe_id)
+        menu = self._menu()
+        recipe = _recipe(menu, args.recipe_id)
         if args.liked is not None:
             recipe.liked = args.liked
         if args.techniques:
@@ -166,26 +171,26 @@ class ConsultationTools:
                     "O prato não pode ser aceito: " + "; ".join(b.message for b in gate.blockers)
                 )
             purchases_brl = sum(p.total_brl for p in recipe.purchases)
-            available = consultation.remaining_brl() + (purchases_brl if recipe.accepted else 0.0)
+            available = menu.remaining_brl() + (purchases_brl if recipe.accepted else 0.0)
             if args.accepted and purchases_brl > available:
                 raise DomainError(
                     f"As compras somam R$ {purchases_brl:.2f} "
                     f"e o orçamento restante é R$ {available:.2f}."
                 )
             recipe.accepted = args.accepted
-        self.store.save_consultation(consultation)
+        self.store.save_menu(menu)
         return {
             "recipe_id": recipe.id,
             "gate": gate,
             "accepted": recipe.accepted,
-            "budget": _budget(consultation),
+            "budget": _budget(menu),
         }
 
     # -- pricing --------------------------------------------------------------
 
     def dish_price(self, args: DishPriceArgs, **kwargs: Any) -> dict[str, Any]:
-        consultation = self._consultation(kwargs)
-        recipe = _recipe(consultation, args.recipe_id)
+        menu = self._menu()
+        recipe = _recipe(menu, args.recipe_id)
         checks = check_ingredients(recipe, self._pantry(), self.table)
         if not recipe.accepted:
             gate = evaluate_gate(recipe, self.store.load_kitchen(), checks, self.table)
@@ -201,13 +206,13 @@ class ConsultationTools:
                     f"R$ {prices.floor_price_brl:.2f}; ela perderia dinheiro."
                 )
             recipe.chosen_price_brl = args.chosen_price_brl
-            self.store.save_consultation(consultation)
+            self.store.save_menu(menu)
         return {
             "recipe_id": recipe.id,
             "cost": cost,
             "pricing": prices,
             "chosen_price_brl": recipe.chosen_price_brl,
-            "budget": _budget(consultation),
+            "budget": _budget(menu),
         }
 
     # -- helpers --------------------------------------------------------------
@@ -215,23 +220,26 @@ class ConsultationTools:
     def _pantry(self) -> list[Any]:
         return load_pantry(self.settings.pantry_path, self.store.load_amendments())
 
-    def _consultation(self, kwargs: dict[str, Any]) -> Consultation:
-        session_id = kwargs.get("session_id") or "default"
-        return self.store.load_consultation(str(session_id), self.settings.budget_brl)
+    def _menu(self) -> Menu:
+        return self.store.load_menu(self.settings.budget_brl)
 
 
-def _recipe(consultation: Consultation, rid: str) -> Recipe:
-    recipe = consultation.recipes.get(rid)
+def _session_id(kwargs: dict[str, Any]) -> str:
+    return str(kwargs.get("session_id") or "default")
+
+
+def _recipe(menu: Menu, rid: str) -> Recipe:
+    recipe = menu.recipes.get(rid)
     if recipe is None:
-        raise DomainError(f"Não há receita {rid!r} nesta consulta. Registre-a com recipe_register.")
+        raise DomainError(f"Não há receita {rid!r} no cardápio. Registre-a com recipe_register.")
     return recipe
 
 
-def _budget(consultation: Consultation) -> dict[str, float]:
+def _budget(menu: Menu) -> dict[str, float]:
     return {
-        "total_brl": consultation.budget_brl,
-        "committed_brl": consultation.committed_brl(),
-        "remaining_brl": consultation.remaining_brl(),
+        "total_brl": menu.budget_brl,
+        "committed_brl": menu.committed_brl(),
+        "remaining_brl": menu.remaining_brl(),
     }
 
 
@@ -351,4 +359,6 @@ def _plain(value: Any) -> Any:
         return [_plain(v) for v in value]
     if isinstance(value, float):
         return round(value, 4)
+    if isinstance(value, datetime):
+        return value.isoformat(timespec="seconds")
     return value

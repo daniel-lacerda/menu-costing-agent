@@ -1,0 +1,36 @@
+{
+  "budget_brl": 80.0,
+  "recipes": {
+    "r1": {
+      "title": "Macarrão com carne moída",
+      "url": "https://receitas.globo.com/tipos-de-prato/macarrao/macarrao-com-carne-moida-4ebeaa5ae316e90f7a004802.ghtml",
+      "yield_portions": 6,
+      "ingredients": [
+        {"name": "carne moída", "quantity": 500, "unit": "g", "pantry_item": "Carne moída (patinho)"},
+        {"name": "macarrão", "quantity": 500, "unit": "g", "pantry_item": "Macarrão espaguete"},
+        {"name": "molho de tomate", "quantity": 340, "unit": "g", "pantry_item": null},
+        {"name": "creme de leite", "quantity": 200, "unit": "g", "pantry_item": null},
+        {"name": "cebola", "quantity": 1, "unit": "un", "pantry_item": "Cebola"},
+        {"name": "alho", "quantity": 2, "unit": "dentes", "pantry_item": "Alho"},
+        {"name": "sal", "quantity": 5, "unit": "g", "pantry_item": "Sal"}
+      ],
+      "equipment_required": ["fogao", "panela_de_pressao"],
+      "burners_needed": 1,
+      "techniques_required": ["refogar", "cozinhar na pressão"],
+      "per_portion_items": [
+        {"name": "arroz", "quantity": 150, "unit": "g", "pantry_item": "Arroz branco tipo 1"},
+        {"name": "feijão", "quantity": 100, "unit": "g", "pantry_item": "Feijão carioquinha"}
+      ],
+      "id": "r1",
+      "session_id": "20260921_180736_fdb77a",
+      "registered_at": "2026-09-21T21:08:00+00:00",
+      "liked": true,
+      "purchases": [
+        {"ingredient": "molho de tomate", "quantity": 340, "unit": "g", "price_brl": 4.0, "confirmed_by_cook": true, "packages": 1},
+        {"ingredient": "creme de leite", "quantity": 200, "unit": "g", "price_brl": 3.5, "confirmed_by_cook": true, "packages": 1}
+      ],
+      "accepted": true,
+      "chosen_price_brl": 12.9
+    }
+  }
+}

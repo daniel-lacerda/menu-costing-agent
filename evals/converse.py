@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +30,9 @@ class Scenario(BaseModel):
     persona: str
     facts: str
     behaviour: str
+    state: Path | None = Field(
+        default=None, description="Directory copied over the consultation store before the run"
+    )
 
 
 class SimulatedCook:
@@ -105,6 +109,13 @@ def build_agent(session_id: str, cook: SimulatedCook) -> Any:
     )
 
 
+def reset_store(store: Path, scenario: Scenario, scenario_dir: Path) -> None:
+    """Every run starts from the scenario's declared state, never from a previous run's."""
+    shutil.rmtree(store, ignore_errors=True)
+    if scenario.state is not None:
+        shutil.copytree(scenario_dir / scenario.state, store)
+
+
 def tool_calls_in(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
     for message in messages:
@@ -125,6 +136,7 @@ def main() -> int:
 
     load_hermes_dotenv(hermes_home=get_hermes_home())
     scenario = Scenario.model_validate(yaml.safe_load(args.scenario.read_text("utf-8")))
+    reset_store(get_hermes_home() / "consultations", scenario, args.scenario.parent)
     cook = SimulatedCook(scenario, OpenAI())
     session_id = new_session_id()
     agent = build_agent(session_id, cook)
