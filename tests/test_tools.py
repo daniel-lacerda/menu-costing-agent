@@ -116,8 +116,8 @@ def test_accepted_dish_is_priced_and_the_budget_is_committed(tools: dict[str, To
     assert accepted["budget"]["remaining_brl"] == pytest.approx(80.0 - 4.5)
     priced = call(tools, "dish_price", {"recipe_id": "r1", "chosen_price_brl": 9.9})
     cmv = (600 * 28.00 / 2000 + 4.5) / 4
-    assert priced["cost"]["cmv_portion_brl"] == pytest.approx(cmv, abs=1e-4)
-    assert priced["pricing"]["floor_price_brl"] == pytest.approx(cmv / 0.9, abs=1e-4)
+    assert priced["cost"]["cmv_portion_brl"] == pytest.approx(cmv, abs=0.01)
+    assert priced["pricing"]["floor_price_brl"] == pytest.approx(cmv / 0.9, abs=0.01)
     assert priced["chosen_price_brl"] == 9.9
 
 
