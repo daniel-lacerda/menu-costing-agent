@@ -8,13 +8,22 @@ volume_ml:
   litro: 1000
   colher de sopa: 15
   colheres de sopa: 15
+  colher (sopa): 15
+  colheres (sopa): 15
   colher de sobremesa: 10
   colheres de sobremesa: 10
+  colher (sobremesa): 10
+  colheres (sobremesa): 10
   colher de chá: 5
   colheres de chá: 5
+  colher (chá): 5
+  colheres (chá): 5
   xícara: 240
   xícaras: 240
   xícara de chá: 240
+  xícaras de chá: 240
+  xícara (chá): 240
+  xícaras (chá): 240
   copo: 200
   copos: 200
 

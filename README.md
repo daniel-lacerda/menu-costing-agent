@@ -128,25 +128,29 @@ Os scores das camadas 3 e 4 são anexados à sessão correspondente no Langfuse,
 
 Cada rodada da suíte reseta o estado da consulta e a memória do Hermes antes de cada cenário, para que nada de uma Dona Maria simulada vaze para a próxima. O modelo principal e o barato (que serve os turnos fora de escopo e interpreta a Dona Maria) vêm do `config.yaml` do profile; cada um se troca por argumento (`--model`, `--cook-model`, `--judge-model`) sem tocar no config. O custo é calculado sobre os tokens que o Hermes contou, com os preços de lista da OpenAI em `evals/prices.yaml` (com a fonte e a data), porque a tabela interna do Hermes é de julho e cobrava o luna 5.6 a cinco vezes o preço atual.
 
-Última rodada, com a suíte na forma atual (sete verificações, onze critérios), um run por cenário e por modelo:
+Rodada final, com a suíte na forma atual (cinco verificações, seis no retorno; onze critérios; juiz `claude-sonnet-5`), dois runs por cenário e por modelo:
 
 | Cenário | Modelo | Verificações | Rubrica | Turnos | s/turno p50 | s/turno máx | Cache | Custo (USD) |
 |---|---|---|---|---|---|---|---|---|
-| sem-forno | gpt-5.6-terra | 6/6 | 9/11 | 4 | 96,5 | 139,7 | 97% | 0,88 |
-| fora-de-escopo | gpt-5.6-terra | 6/6 | 11/11 | 6 | 8,5 | 75,2 | 91% | 0,32 |
-| segundo-dia | gpt-5.6-terra | 7/7 | 8/11 | 7 | 24,5 | 100,0 | 95% | 0,63 |
-| sem-forno | gpt-5.6-luna | 6/6 | 9/11 | 7 | 40,6 | 69,4 | 96% | 0,27 |
-| fora-de-escopo | gpt-5.6-luna | 6/6 | 10/11 | 6 | 7,7 | 60,0 | 88% | 0,11 |
-| segundo-dia | gpt-5.6-luna | 6/7 | 8/11 | 4 | 32,9 | 65,6 | 93% | 0,14 |
+| sem-forno | gpt-6-sol | 5/5 | 11/11 | 4 | 42,9 | 132,0 | 95% | 0,34 |
+| sem-forno | gpt-6-sol | 5/5 | 11/11 | 5 | 10,4 | 78,3 | 95% | 0,36 |
+| fora-de-escopo | gpt-6-sol | 5/5 | 11/11 | 6 | 11,6 | 120,7 | 95% | 0,54 |
+| fora-de-escopo | gpt-6-sol | 5/5 | 11/11 | 6 | 13,4 | 76,8 | 94% | 0,29 |
+| segundo-dia | gpt-6-sol | 6/6 | 11/11 | 3 | 48,4 | 55,7 | 92% | 0,24 |
+| segundo-dia | gpt-6-sol | 6/6 | 9/11 | 3 | 63,0 | 121,0 | 96% | 0,58 |
+| sem-forno | gpt-6-luna | 4/5 | 11/11 | 16 | 30,5 | 277,4 | 96% | 0,06 |
+| sem-forno | gpt-6-luna | 3/5 | 7/11 | 16 | 18,6 | 266,5 | 96% | 0,05 |
+| fora-de-escopo | gpt-6-luna | 5/5 | 10/11 | 5 | 18,4 | 98,2 | 91% | 0,02 |
+| fora-de-escopo | gpt-6-luna | 5/5 | 10/11 | 5 | 27,6 | 62,5 | 88% | 0,02 |
+| segundo-dia | gpt-6-luna | 5/6 | 10/11 | 4 | 47,5 | 144,0 | 94% | 0,02 |
+| segundo-dia | gpt-6-luna | 5/6 | 10/11 | 4 | 66,2 | 126,9 | 93% | 0,03 |
 
 Como ler a tabela:
 
-1. As verificações determinísticas passaram em todos os cenários. São invariantes que o código impõe ou que a prosa tem de respeitar contra o dado da tool; se uma falhar, é bug, não variância.
-2. A rubrica varia entre rodadas iguais: nas três rodadas do terra feitas no mesmo dia, o cenário sem-forno marcou 10, 9 e 9 de 11, e o segundo-dia 9, 8 e 8. As reprovações que se repetem são de conversa: perguntar o preço de uma compra em vez de propor embalagem e valor, apesar da regra no `SOUL.md` e na skill; usar "margem" sem explicar na hora; e dizer "registrar" para a Dona Maria. Cada uma está anotada com a evidência do juiz nos scores da sessão no Langfuse, e são os próximos alvos de iteração.
-3. O turno mais longo (até 140 s) é sempre o de pesquisa: buscas, extração de duas ou três páginas e o registro, com cinco a sete chamadas ao modelo. O Hermes executa em paralelo as tool calls emitidas numa mesma resposta; o que não paraleliza é buscar, extrair, registrar. O gargalo medido é o backend de busca (Firecrawl: p50 de 1,2 s, p95 de 27 s por busca). O prompt cache da OpenAI cobre 91% a 97% da entrada do modelo principal, o que faz o system prompt grande (identidade, guia do Hermes, schemas das tools, cerca de 8 mil tokens) custar 0,2 centavo de dólar por chamada depois da primeira.
-4. O custo por consulta depende mais do número de turnos e de pesquisas do que do modelo: a mesma conversa custou de 0,46 a 1,27 USD no terra ao longo do dia.
-
-O modelo entregue continua sendo o terra, e a rodada do luna mostra por quê. Na rubrica os dois são indistinguíveis com esta amostra, e o luna custa de três a cinco vezes menos. Mas no cenário de retorno o luna registrou uma receita cuja página não tinha extraído (verificação `recipes_come_from_extracted_pages`), quebrando a regra de que toda receita vem de uma página lida, e custeou "1 xícara de vagem" pelo preço do pacote inteiro. São falhas de disciplina com as tools, que o gate não cobre e que uma cozinheira não perceberia. Em produção, a troca seria decidida com várias repetições por cenário e um terceiro modelo como juiz, não com esta amostra.
+1. Com o `gpt-6-sol`, as verificações determinísticas passaram nos seis runs e a rubrica ficou em 11/11 em cinco deles. As duas reprovações do sexto são de conversa: uma receita apresentada sem o rendimento e um fechamento que repetiu só a taxa e a sobra, sem a conta linha a linha que a mesma consultora tinha mostrado no turno anterior. Estão anotadas com a evidência do juiz nos scores da sessão no Langfuse.
+2. Com o `gpt-6-luna`, quatro dos seis runs reprovam na verificação que compara o preço dito com o preço da tool: ele apresenta um valor que não é o dos cenários, ou nem chega a apresentá-los. Um run desviou para a recusa de escopo um turno que estava dentro do assunto, e as duas consultas sem-forno levaram dezesseis turnos e mais de quatro minutos num turno, com 396 recusas por limite de tokens por minuto do provider no dia (contra 6 do sol). Custa vinte vezes menos e não serve para o loop desta consulta; serve para o que faz aqui: triagem, recusa, títulos, compressão e a Dona Maria simulada.
+3. O turno mais longo (até 132 s no sol) é o de pesquisa: buscas, extração de páginas e o registro, com várias chamadas ao modelo. O Hermes executa em paralelo as tool calls emitidas numa mesma resposta; o que não paraleliza é buscar, extrair, registrar. O gargalo medido é o backend de busca (Firecrawl: p50 de 1,2 s, p95 de 27 s por busca). O prompt cache cobre 92% a 96% da entrada do modelo principal.
+4. Uma consulta inteira custa de 0,24 a 0,58 USD no sol, pelos preços de lista, e depende mais do número de pesquisas do que do número de turnos.
 
 O que a suíte encontrou e virou correção, na ordem em que apareceu (a parte final desta lista é do último dia): receitas registradas sem técnica declarada deixavam o gate sem o que confirmar (hoje o modelo exige ao menos um método de cocção por receita); uma opção "4 ou mais" numa pergunta sobre bocas do fogão fazia a consultora gravar "4" como certeza; valores com quatro casas decimais chegavam à conversa; a memória de preferências de um cenário vazava para o seguinte no harness; e, na última rodada, a consultora achou a transcrição de outra consulta pelo `session_search` e deu um segundo prato como fechado sem confirmar nada, o que tirou essa tool do toolset. Do lado do avaliador: técnicas confirmadas em conversas anteriores não contavam, fatos da planilha eram lidos como assunção, um cenário que termina antes do preço era cobrado por ele, e a verificação de preço lia a prosa com uma expressão regular em vez de comparar com o resultado da tool. Com os modelos novos: o `gpt-6-sol` travou duas consultas esperando a Dona Maria medir os temperos que ela usa "a olho" (a rubrica deu 100% e 91% para essas conversas; a verificação determinística de preço as reprovou, que é o motivo de existirem as duas camadas), e a consultora gastava dezoito buscas por consulta procurando preço de pimentão. As duas viraram regra de skill: quantidade proposta em vez de esperada, preço proposto em vez de pesquisado.
 
