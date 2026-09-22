@@ -121,15 +121,27 @@ Os scores das camadas 3 e 4 são anexados à sessão correspondente no Langfuse,
 ./scripts/evaluate.sh scenarios/sem-forno.yaml scenarios/fora-de-escopo.yaml scenarios/segundo-dia.yaml
 ```
 
-Cada rodada da suíte reseta o estado da consulta e a memória do Hermes antes de cada cenário, para que nada de uma Dona Maria simulada vaze para a próxima. Resultados da última rodada:
+Cada rodada da suíte reseta o estado da consulta e a memória do Hermes antes de cada cenário, para que nada de uma Dona Maria simulada vaze para a próxima. A mesma suíte roda com outro modelo principal por argumento (`--model`), sem tocar no config.
 
-| Cenário | Verificações determinísticas | Rubrica de conversa | O que reprovou |
-|---|---|---|---|
-| sem-forno | 5/5 | 10/10 | nada |
-| fora-de-escopo | 5/5 | 9/10 | o preço foi dado sem a demonstração de custos por ingrediente, taxa e piso |
-| segundo-dia | 6/6 | 8/10 | receitas apresentadas sem o link no texto (o registro tinha a URL); uma pergunta repetida sobre a quantidade de louro |
+Última rodada com o modelo entregue e a rodada de comparação com o modelo barato, um run por cenário:
 
-As garantias que o código impõe passaram em todas as rodadas. As reprovações de rubrica são variância de conversa do modelo, ficam registradas com a evidência do juiz (também nos scores da sessão no Langfuse) e são o próximo alvo de iteração nas skills.
+| Cenário | Modelo | Verificações | Rubrica | Turnos | s/turno p50 | s/turno máx | Cache | Custo (USD) |
+|---|---|---|---|---|---|---|---|---|
+| sem-forno | gpt-5.6-terra | 5/5 | 8/10 | 7 | 13,2 | 111,8 | 96% | 0,73 |
+| fora-de-escopo | gpt-5.6-terra | 5/5 | 7/10 | 7 | 9,6 | 111,1 | 92% | 0,42 |
+| segundo-dia | gpt-5.6-terra | 6/6 | 8/10 | 10 | 4,7 | 31,9 | 93% | 0,28 |
+| sem-forno | gpt-5.6-luna | 5/5 | 9/10 | 5 | 8,1 | 58,1 | 94% | 0,16 |
+| fora-de-escopo | gpt-5.6-luna | 5/5 | 9/10 | 6 | 7,8 | 61,5 | 94% | 0,14 |
+| segundo-dia | gpt-5.6-luna | 6/6 | 8/10 | 4 | 28,2 | 53,6 | 93% | 0,16 |
+
+Como ler a tabela:
+
+1. As verificações determinísticas passaram em todas as rodadas, com os dois modelos. São invariantes que o código impõe; se uma falhar, é bug, não variância.
+2. A rubrica varia entre rodadas do mesmo modelo: a rodada anterior do terra marcou 10/10, 9/10 e 8/10 nos mesmos cenários. Com um run por cenário, terra e luna são indistinguíveis na conversa; o custo é de três a seis vezes menor no luna. Em produção, a troca seria decidida com várias repetições por cenário, não com esta amostra.
+3. As reprovações recorrentes, nos dois modelos, são duas: perguntar o preço de uma compra sem propor embalagem e valor, apesar da regra no `SOUL.md` e na skill; e insistir num dado quando a Dona Maria adia a resposta. São os próximos alvos de iteração, registrados com a evidência do juiz nos scores da sessão no Langfuse.
+4. O turno mais longo (até 112 s) é sempre o de pesquisa: três buscas, extração de duas ou três páginas e o registro, com cinco a sete chamadas ao modelo. O Hermes executa em paralelo as tool calls emitidas numa mesma resposta; o que não paraleliza é buscar, extrair, registrar. O gargalo medido é o backend de busca (Firecrawl: p50 de 1,2 s, p95 de 27 s por busca). O prompt cache da OpenAI cobre 92% a 97% da entrada do modelo principal, o que faz o system prompt grande (identidade, guia do Hermes, schemas das tools, cerca de 8 mil tokens) custar 0,2 centavo de dólar por chamada depois da primeira.
+
+O modelo entregue continua sendo o terra: no cenário que é o coração do case, a elicitação, ele foi o único a marcar 10/10 em uma rodada, e o custo por consulta fica abaixo de um dólar. O luna fica documentado como a opção de custo, com os números acima.
 
 O que a suíte encontrou nas rodadas anteriores, e que virou correção: receitas registradas sem técnica declarada deixavam o gate sem o que confirmar (hoje o modelo exige ao menos um método de cocção por receita); uma opção "4 ou mais" numa pergunta sobre bocas do fogão fazia a consultora gravar "4" como certeza; valores com quatro casas decimais chegavam à conversa; a memória de preferências de um cenário vazava para o seguinte no harness. Do lado do avaliador: técnicas confirmadas em conversas anteriores não contavam, fatos da planilha eram lidos como assunção, e um cenário que termina antes do preço era cobrado por ele.
 
