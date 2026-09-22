@@ -35,6 +35,20 @@ RECIPE = {
 }
 
 PURCHASE = {"ingredient": "creme de leite", "quantity": 200, "unit": "g", "price_brl": 4.5}
+CONFIRMED_KITCHEN = {**KITCHEN, "techniques": {"refogar": True}}
+
+
+def accept(tools: dict[str, Tool], rid: str = "r1", price: float = 4.5) -> dict[str, Any]:
+    return call(
+        tools,
+        "recipe_update",
+        {
+            "recipe_id": rid,
+            "liked": True,
+            "purchases": [{**PURCHASE, "price_brl": price, "confirmed_by_cook": True}],
+            "accepted": True,
+        },
+    )
 
 
 def test_schemas_carry_no_references(tools: dict[str, Tool]) -> None:
@@ -75,7 +89,7 @@ def test_unconfirmed_purchase_prices_are_refused(tools: dict[str, Tool]) -> None
 
 
 def test_purchases_beyond_the_budget_block_acceptance(tools: dict[str, Tool]) -> None:
-    call(tools, "kitchen_profile", KITCHEN)
+    call(tools, "kitchen_profile", CONFIRMED_KITCHEN)
     call(tools, "recipe_register", RECIPE)
     expensive = {**PURCHASE, "price_brl": 95.0, "confirmed_by_cook": True}
     result = call(
@@ -84,7 +98,6 @@ def test_purchases_beyond_the_budget_block_acceptance(tools: dict[str, Tool]) ->
         {
             "recipe_id": "r1",
             "liked": True,
-            "techniques": {"refogar": True},
             "purchases": [expensive],
             "accepted": True,
         },
@@ -93,7 +106,7 @@ def test_purchases_beyond_the_budget_block_acceptance(tools: dict[str, Tool]) ->
 
 
 def test_accepted_dish_is_priced_and_the_budget_is_committed(tools: dict[str, Tool]) -> None:
-    call(tools, "kitchen_profile", KITCHEN)
+    call(tools, "kitchen_profile", CONFIRMED_KITCHEN)
     call(tools, "recipe_register", RECIPE)
     confirmed = {**PURCHASE, "confirmed_by_cook": True}
     accepted = call(
@@ -102,7 +115,6 @@ def test_accepted_dish_is_priced_and_the_budget_is_committed(tools: dict[str, To
         {
             "recipe_id": "r1",
             "liked": True,
-            "techniques": {"refogar": True},
             "purchases": [confirmed],
             "accepted": True,
         },
@@ -119,7 +131,7 @@ def test_accepted_dish_is_priced_and_the_budget_is_committed(tools: dict[str, To
 def test_a_price_below_the_floor_is_refused_and_nothing_is_recorded(
     tools: dict[str, Tool],
 ) -> None:
-    call(tools, "kitchen_profile", KITCHEN)
+    call(tools, "kitchen_profile", CONFIRMED_KITCHEN)
     call(tools, "recipe_register", RECIPE)
     call(
         tools,
@@ -127,7 +139,6 @@ def test_a_price_below_the_floor_is_refused_and_nothing_is_recorded(
         {
             "recipe_id": "r1",
             "liked": True,
-            "techniques": {"refogar": True},
             "purchases": [{**PURCHASE, "confirmed_by_cook": True}],
             "accepted": True,
         },
@@ -140,7 +151,7 @@ def test_a_price_below_the_floor_is_refused_and_nothing_is_recorded(
 def test_re_registering_an_accepted_dish_keeps_the_acceptance_and_the_price(
     tools: dict[str, Tool],
 ) -> None:
-    call(tools, "kitchen_profile", KITCHEN)
+    call(tools, "kitchen_profile", CONFIRMED_KITCHEN)
     call(tools, "recipe_register", RECIPE)
     call(
         tools,
@@ -148,7 +159,6 @@ def test_re_registering_an_accepted_dish_keeps_the_acceptance_and_the_price(
         {
             "recipe_id": "r1",
             "liked": True,
-            "techniques": {"refogar": True},
             "purchases": [{**PURCHASE, "confirmed_by_cook": True}],
             "accepted": True,
         },
@@ -162,7 +172,7 @@ def test_re_registering_an_accepted_dish_keeps_the_acceptance_and_the_price(
 
 
 def test_the_budget_is_shared_by_every_accepted_dish(tools: dict[str, Tool]) -> None:
-    call(tools, "kitchen_profile", KITCHEN)
+    call(tools, "kitchen_profile", CONFIRMED_KITCHEN)
     first = {**PURCHASE, "price_brl": 50.0, "confirmed_by_cook": True}
     call(tools, "recipe_register", RECIPE)
     call(
@@ -171,7 +181,6 @@ def test_the_budget_is_shared_by_every_accepted_dish(tools: dict[str, Tool]) -> 
         {
             "recipe_id": "r1",
             "liked": True,
-            "techniques": {"refogar": True},
             "purchases": [first],
             "accepted": True,
         },
@@ -183,7 +192,44 @@ def test_the_budget_is_shared_by_every_accepted_dish(tools: dict[str, Tool]) -> 
         "recipe_update",
         {"recipe_id": "r2", "liked": True, "purchases": [second], "accepted": True},
     )
-    assert "orçamento restante é R$ 30.00" in result["error"]
+    assert "orçamento restante é R$ 30,00" in result["error"]
+
+
+def test_changing_purchases_or_disliking_reopens_an_accepted_dish(tools: dict[str, Tool]) -> None:
+    call(tools, "kitchen_profile", CONFIRMED_KITCHEN)
+    call(tools, "recipe_register", RECIPE)
+    assert accept(tools)["accepted"] is True
+    pricier = {**PURCHASE, "price_brl": 60.0, "confirmed_by_cook": True}
+    reopened = call(tools, "recipe_update", {"recipe_id": "r1", "purchases": [pricier]})
+    assert reopened["accepted"] is False
+    assert reopened["budget"]["committed_brl"] == 0.0
+    assert "desfeito" in reopened["note"]
+    assert "não foi aceito" in call(tools, "dish_price", {"recipe_id": "r1"})["error"]
+    accept(tools, price=60.0)
+    assert call(tools, "recipe_update", {"recipe_id": "r1", "liked": False})["accepted"] is False
+
+
+def test_pantry_amendments_merge_and_can_be_corrected(tools: dict[str, Tool]) -> None:
+    sized = {"name": "Cobertura de chocolate", "package_size": 1000, "package_unit": "g"}
+    call(tools, "pantry_amend", {**sized, "stated_by_cook": True})
+    repriced = call(
+        tools,
+        "pantry_amend",
+        {"name": "Cobertura de chocolate", "total_paid_brl": 70.0, "stated_by_cook": True},
+    )["item"]
+    assert (repriced["base_unit"], repriced["total_paid_brl"]) == ("g", 70.0)
+    resized = call(tools, "pantry_amend", {**sized, "package_size": 500, "stated_by_cook": True})[
+        "item"
+    ]
+    assert (resized["per_unit"], resized["total_paid_brl"]) == (500.0, 70.0)
+    refused = call(tools, "pantry_amend", {**sized, "stated_by_cook": False})
+    assert "cozinheira" in refused["error"]
+    weighed = call(
+        tools,
+        "pantry_amend",
+        {"name": "Sal", "package_size": 1000, "package_unit": "g", "stated_by_cook": True},
+    )
+    assert "já está em g" in weighed["error"]
 
 
 def test_the_kitchen_carries_the_time_it_was_last_updated(tools: dict[str, Tool]) -> None:

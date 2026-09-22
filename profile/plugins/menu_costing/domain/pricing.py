@@ -13,6 +13,7 @@ from .models import (
     Purchase,
     Recipe,
 )
+from .money import brl, per_unit
 from .pantry import find_item
 from .recipes import package_in, purchase_for
 from .units import ConversionTable
@@ -27,7 +28,7 @@ def cost_breakdown(
     lines: list[CostLine] = []
     for check in checks:
         purchase = purchase_for(check.name, recipe.purchases)
-        if check.status == "missing":
+        if check.status == "ausente":
             if purchase is None:
                 raise DomainError(f"Sem compra registrada para {check.name}.")
             lines.append(_purchase_line(check, purchase, check.needed, check.unit, table))
@@ -43,6 +44,7 @@ def cost_breakdown(
                 quantity=from_stock,
                 unit=item.base_unit,
                 unit_cost_brl=item.unit_cost_brl,
+                unit_cost_display=item.unit_cost_display,
                 cost_brl=from_stock * item.unit_cost_brl,
                 reference=f"planilha linha {item.row}: {item.name}",
             )
@@ -78,11 +80,14 @@ def price_for_margin(cmv_brl: float, platform_fee: float, margin: float) -> Pric
 
 
 def pricing(cmv_portion_brl: float, platform_fee: float, margins: list[float]) -> Pricing:
+    # Prices are derived from the cost in cents, the number the cook is shown, so the arithmetic
+    # she hears ("R$ 6,32 ÷ 0,90 = R$ 7,02") reproduces to the cent.
+    cmv = round(cmv_portion_brl, 2)
     return Pricing(
         platform_fee=platform_fee,
-        cmv_portion_brl=cmv_portion_brl,
-        floor_price_brl=price_floor(cmv_portion_brl, platform_fee),
-        scenarios=[price_for_margin(cmv_portion_brl, platform_fee, m) for m in margins],
+        cmv_portion_brl=cmv,
+        floor_price_brl=price_floor(cmv, platform_fee),
+        scenarios=[price_for_margin(cmv, platform_fee, m) for m in margins],
     )
 
 
@@ -96,9 +101,10 @@ def _purchase_line(
         quantity=used,
         unit=unit,
         unit_cost_brl=unit_cost,
+        unit_cost_display=per_unit(unit_cost, unit),
         cost_brl=used * unit_cost,
         reference=(
             f"compra: {purchase.packages} x {purchase.quantity:g} {purchase.unit} "
-            f"a R$ {purchase.price_brl:.2f}"
+            f"a {brl(purchase.price_brl)}"
         ),
     )

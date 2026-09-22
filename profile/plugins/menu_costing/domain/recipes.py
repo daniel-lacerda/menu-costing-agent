@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from typing import cast
 
 from .errors import DomainError
 from .models import (
@@ -19,7 +20,7 @@ from .models import (
     RecipeInput,
 )
 from .pantry import find_item
-from .units import ConversionTable, convert_between, convert_measure, fold
+from .units import BaseUnit, ConversionTable, convert_between, convert_measure, fold
 
 
 def check_ingredients(
@@ -28,8 +29,8 @@ def check_ingredients(
     lines = [(ingredient, 1, "receita") for ingredient in recipe.ingredients]
     lines += [(item, recipe.yield_portions, "porcao") for item in recipe.per_portion_items]
     checks: list[IngredientCheck] = []
-    for ingredient, batches, scope in lines:
-        scaled = ingredient.quantity * batches
+    for ingredient, times, scope in lines:
+        scaled = ingredient.quantity * times
         if ingredient.pantry_item is None:
             checks.append(
                 IngredientCheck(
@@ -38,9 +39,9 @@ def check_ingredients(
                     scope=scope,
                     needed=scaled,
                     unit=ingredient.unit,
-                    conversion=_scaled_note(ingredient, batches, f"{scaled:g} {ingredient.unit}"),
+                    conversion=_scaled_note(ingredient, times, f"{scaled:g} {ingredient.unit}"),
                     stock=None,
-                    status="missing",
+                    status="ausente",
                     shortfall=scaled,
                 )
             )
@@ -60,21 +61,21 @@ def check_ingredients(
                 scope=scope,
                 needed=converted.quantity,
                 unit=item.base_unit,
-                conversion=_scaled_note(ingredient, batches, converted.note),
+                conversion=_scaled_note(ingredient, times, converted.note),
                 stock=item.stock_base,
-                status="have" if shortfall == 0 else "short",
+                status="suficiente" if shortfall == 0 else "insuficiente",
                 shortfall=shortfall,
             )
         )
     return checks
 
 
-def _scaled_note(ingredient: IngredientInput, portions: int, converted_note: str) -> str:
+def _scaled_note(ingredient: IngredientInput, times: int, converted_note: str) -> str:
     """Show the cook the per-portion quantity that produced a batch total."""
-    if portions == 1:
+    if times == 1:
         return converted_note
     per_portion = f"{ingredient.quantity:g} {ingredient.unit} por porção"
-    return f"{per_portion} x {portions} porções: {converted_note}"
+    return f"{per_portion} x {times} porções: {converted_note}"
 
 
 def purchase_for(ingredient: str, purchases: list[Purchase]) -> Purchase | None:
@@ -87,12 +88,10 @@ def package_in(purchase: PurchaseInput, check: IngredientCheck, table: Conversio
     if fold(purchase.unit) == fold(check.unit):
         return purchase.quantity
     if check.pantry_item is not None:
+        # A check against a pantry item is stated in that item's base unit.
+        base = cast(BaseUnit, check.unit)
         return convert_measure(
-            purchase.quantity,
-            purchase.unit,
-            check.unit,  # type: ignore[arg-type]
-            check.pantry_item,
-            table,
+            purchase.quantity, purchase.unit, base, check.pantry_item, table
         ).quantity
     return convert_between(purchase.quantity, purchase.unit, check.unit, table)
 
@@ -129,7 +128,7 @@ def carry_purchases(
 
 
 def evaluate_gate(
-    recipe: Recipe, profile: KitchenProfile, checks: list[IngredientCheck], table: ConversionTable
+    recipe: Recipe, profile: KitchenProfile, checks: list[IngredientCheck]
 ) -> GateReport:
     """Everything the statement requires before the cook commits to a dish.
 
@@ -138,8 +137,12 @@ def evaluate_gate(
     """
     blockers: list[Blocker] = []
 
-    for field in profile.missing():
-        blockers.append(Blocker(code=f"kitchen_unknown:{field}", message=f"Falta saber: {field}."))
+    if recipe.burners_needed > 0 and profile.burners is None:
+        blockers.append(
+            Blocker(
+                code="kitchen_unknown:burners", message="Falta saber quantas bocas tem o fogão."
+            )
+        )
 
     if recipe.liked is None:
         blockers.append(Blocker(code="liked_unknown", message="Ela ainda não disse se gostou."))

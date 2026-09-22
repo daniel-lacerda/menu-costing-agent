@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import ClassVar, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field, model_validator
 
+from .money import per_unit
 from .units import BaseUnit, fold
 
 # ---------------------------------------------------------------------------
@@ -36,8 +37,7 @@ class PantryItem(BaseModel):
     @computed_field(description="Custo unitário legível: por kg, por L ou por un")  # type: ignore[prop-decorator]
     @property
     def unit_cost_display(self) -> str:
-        scale, label = {"g": (1000, "kg"), "ml": (1000, "L"), "un": (1, "un")}[self.base_unit]
-        return f"R$ {self.unit_cost_brl * scale:.2f}/{label}"
+        return per_unit(self.unit_cost_brl, self.base_unit)
 
 
 class PantryAmendment(BaseModel):
@@ -64,15 +64,17 @@ class KitchenProfile(BaseModel):
     """What the statement asks the consultant to find out before proposing a dish.
 
     Three groups, as in the statement: equipment, skills, operational constraints. Names are
-    free text the model chooses, matched case- and accent-insensitively; the stove is the one
-    piece of equipment measured by a number, because recipes need burners at the same time.
+    free text the model chooses, matched case- and accent-insensitively. The stove is the one
+    piece of equipment kept as a number, because it is the only one a recipe needs a quantity
+    of (burners at the same time) and the only one the code compares.
     """
 
     burners: int | None = Field(default=None, ge=0, description="Bocas do fogão; 0 se não tem")
     equipment: dict[str, bool] = Field(
         default_factory=dict,
         description=(
-            "Equipamento e se ela tem: forno, panela de pressão, air fryer, liquidificador..."
+            "Equipamento além do fogão e se ela tem: forno, panela de pressão, air fryer, "
+            "liquidificador..."
         ),
     )
     techniques: dict[str, bool] = Field(
@@ -85,11 +87,9 @@ class KitchenProfile(BaseModel):
         default=None, description="Restrições operacionais: gás ou elétrico, geladeira, horários"
     )
 
-    # Unknown, these block every dish: a recipe needs the stove and a slot in her day.
-    REQUIRED: ClassVar[tuple[str, ...]] = ("burners", "time_per_batch")
-
     def missing(self) -> list[str]:
-        return [name for name in self.REQUIRED if getattr(self, name) is None]
+        """What the code itself needs to judge any dish; the rest is for the model to weigh."""
+        return ["burners"] if self.burners is None else []
 
     def has(self, equipment: str) -> bool | None:
         return _lookup(self.equipment, equipment)
@@ -107,9 +107,6 @@ class KitchenProfile(BaseModel):
 def _lookup(facts: dict[str, bool], name: str) -> bool | None:
     key = fold(name)
     return next((value for known, value in facts.items() if fold(known) == key), None)
-
-
-STOVE_NAMES = frozenset({"fogao", "fogao a gas", "fogao eletrico", "cooktop", "boca", "bocas"})
 
 
 # ---------------------------------------------------------------------------
@@ -154,14 +151,6 @@ class RecipeInput(BaseModel):
             "em quantidade por porção. A tool multiplica pelo rendimento."
         ),
     )
-
-    @model_validator(mode="after")
-    def _stove_is_counted_not_listed(self) -> RecipeInput:
-        """The stove is checked by burners; as equipment it would never match her profile."""
-        for name in self.equipment_required:
-            if fold(name) in STOVE_NAMES:
-                raise ValueError(f"{name!r} não entra em equipment_required; use burners_needed")
-        return self
 
     @model_validator(mode="after")
     def _names_are_unique(self) -> RecipeInput:
@@ -227,13 +216,18 @@ class IngredientCheck(BaseModel):
     scope: Literal["receita", "porcao"] = Field(
         default="receita", description="Da receita da página ou adicionado a cada porção"
     )
-    needed: float = Field(description="Quantidade necessária para um lote, na unidade base")
+    needed: float = Field(
+        description=(
+            "Quantidade necessária para um lote, na unidade base do item da despensa; na "
+            "unidade da receita quando ela não tem o item"
+        )
+    )
     unit: str
     conversion: str
     stock: float | None = Field(
         description="Estoque na unidade base, ou nulo se não está na despensa"
     )
-    status: Literal["have", "short", "missing"]
+    status: Literal["suficiente", "insuficiente", "ausente"]
     shortfall: float = Field(description="Quanto falta comprar para um lote")
 
 
@@ -255,7 +249,8 @@ class CostLine(BaseModel):
     source: Literal["despensa", "compra"]
     quantity: float
     unit: str
-    unit_cost_brl: float
+    unit_cost_brl: float = Field(description="Por unidade base, sem arredondar; para conferência")
+    unit_cost_display: str = Field(description="Custo unitário legível, para dizer a ela")
     cost_brl: float
     reference: str = Field(description="Linha da planilha ou compra que originou o custo")
 

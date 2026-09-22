@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +22,7 @@ from .domain.models import (
     Recipe,
     RecipeInput,
 )
+from .domain.money import brl
 from .domain.pantry import find_item, load_pantry
 from .domain.pricing import cost_breakdown, pricing
 from .domain.recipes import (
@@ -38,13 +38,14 @@ TOOLSET = "menu_costing"
 Handler = Callable[..., str]
 
 
-@dataclass(frozen=True)
-class Settings:
+class Settings(BaseModel):
+    """Plugin settings as declared in config.yaml; nothing here has a default in code."""
+
     pantry_path: Path
     conversions_path: Path
-    budget_brl: float
-    platform_fee: float
-    margins: tuple[float, ...]
+    budget_brl: float = Field(ge=0)
+    platform_fee: float = Field(ge=0, lt=1)
+    margins: list[float] = Field(min_length=1)
 
 
 @dataclass(frozen=True)
@@ -63,13 +64,12 @@ class RecipeUpdateArgs(BaseModel):
     liked: bool | None = Field(
         default=None, description="Ela gostou da receita e quer seguir com ela"
     )
-    techniques: dict[str, bool] | None = Field(
-        default=None,
-        description="Técnicas confirmadas com ela; ficam guardadas no perfil da cozinha",
-    )
     purchases: list[PurchaseInput] | None = Field(
         default=None,
-        description="Embalagens confirmadas para o que falta; substitui a lista anterior",
+        description=(
+            "Embalagens confirmadas para o que falta; substitui a lista anterior e desfaz um "
+            "aceite anterior, porque o custo mudou"
+        ),
     )
     accepted: bool | None = Field(
         default=None,
@@ -103,7 +103,8 @@ class ConsultationTools:
     def pantry_amend(self, args: PantryAmendment, **kwargs: Any) -> dict[str, Any]:
         if not args.stated_by_cook:
             raise DomainError("Só registre uma correção que a cozinheira informou.")
-        item = find_item(args.name, self._pantry())
+        # Validated against the spreadsheet as it is, so a size can be corrected after being set.
+        item = find_item(args.name, load_pantry(self.settings.pantry_path))
         if item is None:
             raise DomainError(f"Não existe {args.name!r} na despensa.")
         if (args.package_size is None) != (args.package_unit is None):
@@ -112,9 +113,11 @@ class ConsultationTools:
             raise DomainError(
                 f"{item.name} já está em {item.base_unit}; não há embalagem a informar."
             )
-        amendments = [a for a in self.store.load_amendments() if a.name != item.name]
-        amendments.append(args.model_copy(update={"name": item.name}))
-        self.store.save_amendments(amendments)
+        others = [a for a in self.store.load_amendments() if a.name != item.name]
+        current = next((a for a in self.store.load_amendments() if a.name == item.name), None)
+        stated = args.model_dump(exclude_unset=True, exclude={"name"})
+        merged = (current or args).model_copy(update={**stated, "name": item.name})
+        self.store.save_amendments([*others, merged])
         return {"item": find_item(item.name, self._pantry())}
 
     # -- kitchen --------------------------------------------------------------
@@ -153,7 +156,7 @@ class ConsultationTools:
             recipe.purchases = carry_purchases(previous.purchases, checks, self.table)
         menu.recipes[rid] = recipe
         self.store.save_menu(menu)
-        gate = evaluate_gate(recipe, self._kitchen(), checks, self.table)
+        gate = evaluate_gate(recipe, self._kitchen(), checks)
         return {"recipe_id": rid, "ingredients": checks, "gate": gate}
 
     def recipe_update(self, args: RecipeUpdateArgs, **kwargs: Any) -> dict[str, Any]:
@@ -161,11 +164,6 @@ class ConsultationTools:
         recipe = _recipe(menu, args.recipe_id)
         if args.liked is not None:
             recipe.liked = args.liked
-        if args.techniques:
-            profile = self._kitchen()
-            self.store.save_kitchen(
-                profile.model_copy(update={"techniques": {**profile.techniques, **args.techniques}})
-            )
         checks = check_ingredients(recipe, self._pantry(), self.table)
         if args.purchases is not None:
             unconfirmed = [p.ingredient for p in args.purchases if not p.confirmed_by_cook]
@@ -175,7 +173,12 @@ class ConsultationTools:
                     + ", ".join(unconfirmed)
                 )
             recipe.purchases = plan_purchases(args.purchases, checks, self.table)
-        gate = evaluate_gate(recipe, self._kitchen(), checks, self.table)
+        # An acceptance covers one list of purchases and her liking the dish; either changing
+        # reopens the decision, and with it the money the dish had committed.
+        reopened = recipe.accepted and (args.purchases is not None or args.liked is False)
+        if reopened:
+            recipe.accepted = False
+        gate = evaluate_gate(recipe, self._kitchen(), checks)
         if args.accepted is not None:
             if args.accepted and not gate.ready:
                 raise DomainError(
@@ -185,17 +188,20 @@ class ConsultationTools:
             available = menu.remaining_brl() + (purchases_brl if recipe.accepted else 0.0)
             if args.accepted and purchases_brl > available:
                 raise DomainError(
-                    f"As compras somam R$ {purchases_brl:.2f} "
-                    f"e o orçamento restante é R$ {available:.2f}."
+                    f"As compras somam {brl(purchases_brl)} "
+                    f"e o orçamento restante é {brl(available)}."
                 )
             recipe.accepted = args.accepted
         self.store.save_menu(menu)
-        return {
+        result = {
             "recipe_id": recipe.id,
             "gate": gate,
             "accepted": recipe.accepted,
             "budget": _budget(menu),
         }
+        if reopened and not recipe.accepted:
+            result["note"] = "O aceite anterior foi desfeito; confirme de novo com accepted."
+        return result
 
     # -- pricing --------------------------------------------------------------
 
@@ -204,17 +210,17 @@ class ConsultationTools:
         recipe = _recipe(menu, args.recipe_id)
         checks = check_ingredients(recipe, self._pantry(), self.table)
         if not recipe.accepted:
-            gate = evaluate_gate(recipe, self._kitchen(), checks, self.table)
+            gate = evaluate_gate(recipe, self._kitchen(), checks)
             pending = "; ".join(b.message for b in gate.blockers) or "falta ela aceitar o prato"
             raise DomainError(f"O prato ainda não foi aceito: {pending}.")
         cost = cost_breakdown(recipe, checks, self._pantry(), self.table)
-        margins = list(args.margins) if args.margins else list(self.settings.margins)
+        margins = args.margins or self.settings.margins
         prices = pricing(cost.cmv_portion_brl, self.settings.platform_fee, margins)
         if args.chosen_price_brl is not None:
             if args.chosen_price_brl < prices.floor_price_brl:
                 raise DomainError(
-                    f"R$ {args.chosen_price_brl:.2f} fica abaixo do preço mínimo "
-                    f"R$ {prices.floor_price_brl:.2f}; ela perderia dinheiro."
+                    f"{brl(args.chosen_price_brl)} fica abaixo do preço mínimo "
+                    f"{brl(prices.floor_price_brl)}; ela perderia dinheiro."
                 )
             recipe.chosen_price_brl = args.chosen_price_brl
             self.store.save_menu(menu)
@@ -239,7 +245,8 @@ class ConsultationTools:
 
 
 def _session_id(kwargs: dict[str, Any]) -> str:
-    return str(kwargs.get("session_id") or "default")
+    """Hermes passes the session id to every tool handler; a missing one is a wiring error."""
+    return str(kwargs["session_id"])
 
 
 def _recipe_input(recipe: Recipe) -> RecipeInput:
@@ -373,18 +380,15 @@ def _plain(value: Any) -> Any:
     if isinstance(value, BaseModel):
         return _plain(value.model_dump(mode="json"))
     if isinstance(value, dict):
-        return {k: _money(k, _plain(v)) for k, v in value.items()}
+        return {k: _rounded(k, _plain(v)) for k, v in value.items()}
     if isinstance(value, list | tuple):
         return [_plain(v) for v in value]
-    if isinstance(value, float):
-        return round(value, 4)
-    if isinstance(value, datetime):
-        return value.isoformat(timespec="seconds")
     return value
 
 
-def _money(key: str, value: Any) -> Any:
-    """Amounts in reais are shown with cents; only unit costs keep the precision per gram."""
-    if key.endswith("_brl") and key != "unit_cost_brl" and isinstance(value, float):
-        return round(value, 2)
-    return value
+def _rounded(key: str, value: Any) -> Any:
+    """Amounts in reais are shown in cents and other quantities to four places; a unit cost per
+    gram is left exact because rounding it would move the totals it is meant to reproduce."""
+    if not isinstance(value, float) or key == "unit_cost_brl":
+        return value
+    return round(value, 2) if key.endswith("_brl") else round(value, 4)

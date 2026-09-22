@@ -23,13 +23,13 @@ from menu_costing.domain.recipes import (
 from menu_costing.domain.units import ConversionTable
 
 
-def test_ingredient_status_is_have_short_or_missing(
+def test_ingredient_status_is_enough_short_or_absent(
     pantry: list[PantryItem], table: ConversionTable, stroganoff: Recipe
 ) -> None:
     checks = {c.name: c for c in check_ingredients(stroganoff, pantry, table)}
-    assert checks["cebola"].status == "have"
-    assert (checks["alcatra"].status, checks["alcatra"].shortfall) == ("short", 200)
-    assert (checks["creme de leite"].status, checks["creme de leite"].stock) == ("missing", None)
+    assert checks["cebola"].status == "suficiente"
+    assert (checks["alcatra"].status, checks["alcatra"].shortfall) == ("insuficiente", 200)
+    assert (checks["creme de leite"].status, checks["creme de leite"].stock) == ("ausente", None)
 
 
 def test_gate_is_ready_only_when_everything_is_confirmed(
@@ -39,7 +39,7 @@ def test_gate_is_ready_only_when_everything_is_confirmed(
     complete_kitchen: KitchenProfile,
 ) -> None:
     checks = check_ingredients(stroganoff, pantry, table)
-    assert evaluate_gate(stroganoff, complete_kitchen, checks, table).ready
+    assert evaluate_gate(stroganoff, complete_kitchen, checks).ready
 
 
 @pytest.mark.parametrize(
@@ -47,7 +47,7 @@ def test_gate_is_ready_only_when_everything_is_confirmed(
     [
         (lambda r, k: setattr(r, "liked", None), "liked_unknown"),
         (lambda r, k: setattr(r, "liked", False), "not_liked"),
-        (lambda r, k: setattr(k, "time_per_batch", None), "kitchen_unknown:time_per_batch"),
+        (lambda r, k: setattr(k, "burners", None), "kitchen_unknown:burners"),
         (lambda r, k: setattr(r, "equipment_required", ["forno"]), "equipment_missing:forno"),
         (
             lambda r, k: setattr(r, "equipment_required", ["batedeira"]),
@@ -76,7 +76,7 @@ def test_each_unmet_condition_names_its_blocker(
     recipe, kitchen = stroganoff, complete_kitchen
     change(recipe, kitchen)
     checks = check_ingredients(recipe, pantry, table)
-    report = evaluate_gate(recipe, kitchen, checks, table)
+    report = evaluate_gate(recipe, kitchen, checks)
     assert not report.ready
     assert blocker in {b.code for b in report.blockers}
 
@@ -88,9 +88,18 @@ def test_a_dish_waits_only_for_what_it_uses(
     complete_kitchen: KitchenProfile,
 ) -> None:
     complete_kitchen.equipment = {}
+    complete_kitchen.time_per_batch = None
     checks = check_ingredients(stroganoff, pantry, table)
-    assert evaluate_gate(stroganoff, complete_kitchen, checks, table).ready
-    assert complete_kitchen.missing() == []
+    assert evaluate_gate(stroganoff, complete_kitchen, checks).ready
+
+
+def test_a_dish_without_a_stove_does_not_wait_for_the_burners(
+    pantry: list[PantryItem], table: ConversionTable, stroganoff: Recipe
+) -> None:
+    stroganoff.burners_needed = 0
+    checks = check_ingredients(stroganoff, pantry, table)
+    unknown = KitchenProfile(techniques={"refogar": True})
+    assert evaluate_gate(stroganoff, unknown, checks).ready
 
 
 def test_equipment_and_techniques_match_however_she_spelled_them(
@@ -102,19 +111,7 @@ def test_equipment_and_techniques_match_however_she_spelled_them(
     stroganoff.equipment_required = ["Panela de Pressao"]
     stroganoff.techniques_required = ["REFOGAR"]
     checks = check_ingredients(stroganoff, pantry, table)
-    assert evaluate_gate(stroganoff, complete_kitchen, checks, table).ready
-
-
-def test_the_stove_is_declared_by_burners_not_as_equipment() -> None:
-    with pytest.raises(ValueError, match="burners_needed"):
-        RecipeInput(
-            title="x",
-            url="https://example.org/x",
-            yield_portions=2,
-            ingredients=[IngredientInput(name="arroz", quantity=200, unit="g")],
-            equipment_required=["fogão"],
-            techniques_required=["cozinhar"],
-        )
+    assert evaluate_gate(stroganoff, complete_kitchen, checks).ready
 
 
 def test_an_unknown_technique_blocker_names_the_ones_already_confirmed(
@@ -126,8 +123,7 @@ def test_an_unknown_technique_blocker_names_the_ones_already_confirmed(
     stroganoff.techniques_required = ["Refogar", "assar"]
     checks = check_ingredients(stroganoff, pantry, table)
     codes = {
-        b.code: b.message
-        for b in evaluate_gate(stroganoff, complete_kitchen, checks, table).blockers
+        b.code: b.message for b in evaluate_gate(stroganoff, complete_kitchen, checks).blockers
     }
     assert "technique_unknown:Refogar" not in codes
     assert "Já confirmado por ela: refogar" in codes["technique_unknown:assar"]
@@ -152,10 +148,10 @@ def test_purchases_are_whole_packages_covering_the_shortfall(
     small_box = PurchaseInput(
         ingredient="creme de leite", quantity=150, unit="g", price_brl=3.5, confirmed_by_cook=True
     )
-    bottle = PurchaseInput(
+    tray = PurchaseInput(
         ingredient="alcatra", quantity=0.5, unit="kg", price_brl=21.0, confirmed_by_cook=True
     )
-    planned = {p.ingredient: p for p in plan_purchases([small_box, bottle], checks, table)}
+    planned = {p.ingredient: p for p in plan_purchases([small_box, tray], checks, table)}
     assert (planned["creme de leite"].packages, planned["creme de leite"].total_brl) == (2, 7.0)
     assert planned["alcatra"].packages == 1
 
@@ -218,7 +214,7 @@ def test_per_portion_items_scale_with_the_yield(
     checks = {c.name: c for c in check_ingredients(stroganoff, pantry, table)}
     assert (checks["arroz"].scope, checks["arroz"].needed) == ("porcao", 600)
     assert checks["arroz"].conversion == "150 g por porção x 4 porções: 600 g"
-    assert (checks["embalagem"].status, checks["embalagem"].shortfall) == ("missing", 4)
+    assert (checks["embalagem"].status, checks["embalagem"].shortfall) == ("ausente", 4)
 
 
 def test_a_pantry_name_the_model_invented_is_rejected(
@@ -233,5 +229,5 @@ def test_a_pantry_name_the_model_invented_is_rejected(
         ],
         techniques_required=["refogar"],
     )
-    with pytest.raises(Exception, match="nome exato"):
+    with pytest.raises(DomainError, match="nome exato"):
         check_ingredients(recipe, pantry, table)

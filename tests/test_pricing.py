@@ -30,6 +30,6 @@ def test_cost_splits_stock_at_pantry_cost_and_shortfall_at_purchase_cost(
     breakdown = cost_breakdown(recipe, check_ingredients(recipe, pantry, table), pantry, table)
     alcatra = [line for line in breakdown.lines if line.ingredient == "alcatra"]
     assert [line.source for line in alcatra] == ["despensa", "compra"]
-    assert alcatra[0].cost_brl == pytest.approx(800 * 34.00 / 800)
+    assert alcatra[0].cost_brl == pytest.approx(34.00)
     assert alcatra[1].cost_brl == pytest.approx(200 * 8.50 / 200)
     assert breakdown.cmv_portion_brl == pytest.approx(breakdown.cmv_batch_brl / 4)
