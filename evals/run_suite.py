@@ -166,6 +166,8 @@ def summary_table(reports: list[RunReport]) -> str:
             v.criterion for v in r.rubric.verdicts if not v.passed
         ]
         m = r.metrics
+        if m.unpriced_models:
+            failed.append(f"sem preço em prices.yaml: {', '.join(m.unpriced_models)}")
         lines.append(
             f"| {r.scenario} | {r.model} | {r.session_id} | {r.checks_passed}/{len(r.checks)} | "
             f"{r.rubric.score:.0%} | {m.turns} | {m.turn_seconds_p50} | {m.turn_seconds_max} | "

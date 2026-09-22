@@ -11,7 +11,18 @@ import statistics
 from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import BaseModel, Field
+
+PRICES = Path(__file__).with_name("prices.yaml")
+
+
+class Price(BaseModel):
+    """USD per million tokens. Cache writes bill as plain input on OpenAI."""
+
+    input: float
+    cached_input: float
+    output: float
 
 
 class ModelUsage(BaseModel):
@@ -22,7 +33,9 @@ class ModelUsage(BaseModel):
     cache_read_tokens: int
     cache_write_tokens: int
     output_tokens: int
-    estimated_cost_usd: float | None
+    cost_usd: float | None = Field(
+        description="From prices.yaml; null when the model is not listed"
+    )
 
 
 class Metrics(BaseModel):
@@ -34,7 +47,11 @@ class Metrics(BaseModel):
 
     @property
     def cost_usd(self) -> float:
-        return sum(u.estimated_cost_usd or 0.0 for u in self.usage)
+        return sum(u.cost_usd or 0.0 for u in self.usage)
+
+    @property
+    def unpriced_models(self) -> list[str]:
+        return sorted({u.model for u in self.usage if u.cost_usd is None})
 
     @property
     def main_model_cache_share(self) -> float:
@@ -50,11 +67,14 @@ def collect(turns: list[dict[str, Any]], state_db: Path, session_id: str) -> Met
     con = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True)
     rows = con.execute(
         "SELECT model, task, api_call_count, input_tokens, cache_read_tokens, "
-        "cache_write_tokens, output_tokens, estimated_cost_usd "
+        "cache_write_tokens, output_tokens "
         "FROM session_model_usage WHERE session_id = ?",
         (session_id,),
     ).fetchall()
     con.close()
+    prices = {
+        name: Price.model_validate(p) for name, p in yaml.safe_load(PRICES.read_text()).items()
+    }
     return Metrics(
         turns=len(turns),
         tool_calls=sum(len(t["tool_calls"]) for t in turns),
@@ -69,8 +89,19 @@ def collect(turns: list[dict[str, Any]], state_db: Path, session_id: str) -> Met
                 cache_read_tokens=int(row[4] or 0),
                 cache_write_tokens=int(row[5] or 0),
                 output_tokens=int(row[6] or 0),
-                estimated_cost_usd=row[7],
+                cost_usd=_cost(prices.get(row[0]), row[3:7]),
             )
             for row in rows
         ],
     )
+
+
+def _cost(price: Price | None, tokens: tuple[Any, ...]) -> float | None:
+    if price is None:
+        return None
+    uncached, cache_read, cache_write, output = (int(t or 0) for t in tokens)
+    return (
+        (uncached + cache_write) * price.input
+        + cache_read * price.cached_input
+        + output * price.output
+    ) / 1_000_000
