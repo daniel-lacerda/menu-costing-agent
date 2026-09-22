@@ -7,14 +7,15 @@ Este repositório é uma *profile distribution* do Hermes: tudo que customiza o 
 | Item | Valor |
 |---|---|
 | Hermes Agent | v0.21.3 (2026.9.14), commit `6a627e6e` |
-| Modelo principal | `gpt-5.6-terra`, OpenAI direto, Responses API |
-| Modelo auxiliar | `gpt-5.6-luna` (título de sessão, compressão, triagem de escopo, recusa fora de escopo) |
+| Modelo principal | `gpt-6-sol`, OpenAI direto, Responses API |
+| Modelo auxiliar | `gpt-6-luna` (título de sessão, compressão, triagem de escopo, recusa fora de escopo) |
+| Juiz da avaliação | `claude-sonnet-5`, Anthropic, só na suíte |
 | Busca e extração | Firecrawl |
 | Tracing | Langfuse, opcional, SDK v4 |
 
 ## Como rodar
 
-Pré-requisitos: Linux, macOS ou WSL2, `curl`, `git`, uma chave da OpenAI e uma do Firecrawl.
+Pré-requisitos: Linux, macOS ou WSL2, `curl`, `git`, uma chave da OpenAI e uma do Firecrawl. A suíte de avaliação pede ainda uma chave da Anthropic, para o juiz.
 
 ```bash
 git clone https://github.com/daniel-lacerda/menu-costing-agent.git
@@ -32,7 +33,7 @@ Para conversar pelo navegador, com os cards de pergunta e as chamadas de tool vi
 HERMES_HOME=~/.hermes/profiles/sabor-da-maria hermes dashboard
 ```
 
-Para desenvolver dentro do repositório, aponte o Hermes direto para a pasta do profile: `HERMES_HOME=$PWD/profile hermes`. O estado de runtime que o Hermes grava ali (banco de sessões, logs, caches) está no `.gitignore`.
+Para desenvolver dentro do repositório, aponte o Hermes direto para a pasta do profile: `HERMES_HOME=$PWD/profile hermes`, com um `profile/.env` próprio (o mesmo `.env.example`). O estado de runtime que o Hermes grava ali (banco de sessões, logs, caches) está no `.gitignore`. Os scripts da suíte usam esse `HERMES_HOME` por padrão e apagam a consulta e a memória antes de cada cenário; eles se recusam a rodar contra um profile instalado em `~/.hermes`.
 
 Uma observação sobre o início de sessão: o CLI imprime `Warning: Unknown toolsets: menu_costing`. É uma ordem de inicialização do Hermes (`cli.py` valida os nomes de toolset antes de descobrir os plugins, que só carregam na primeira importação de `model_tools`). As tools funcionam normalmente; o log registra cada chamada.
 
@@ -47,9 +48,9 @@ A conversa não é linear, mas cada etapa do enunciado tem um procedimento (uma 
 | 2.3 Ingredientes e compras | `kitchen-constraints` | `recipe_register`, `recipe_update`, `pantry_inventory`, `pantry_amend` |
 | 2.4 Aceitação, CMV e preço | `menu-costing` | `recipe_update`, `dish_price` |
 
-O ponto central do enunciado, "não pode deixar ela comprar ingredientes e descobrir depois que não consegue cozinhar", é um *gate* em código, não uma instrução de prompt. `recipe_register` devolve a lista de bloqueios de uma receita: bocas do fogão ou tempo por cozinhada desconhecidos, equipamento que a receita usa e ela não tem ou ainda não disse se tem, técnica que ela não confirmou com essas palavras, ingrediente que falta sem compra confirmada. `recipe_update` só grava a aceitação quando essa lista está vazia e as compras cabem no orçamento. `dish_price` recusa qualquer prato não aceito. A consultora conduz a conversa; a garantia não depende dela.
+O ponto central do enunciado, "não pode deixar ela comprar ingredientes e descobrir depois que não consegue cozinhar", é um *gate* em código, não uma instrução de prompt. `recipe_register` devolve a lista de bloqueios de uma receita: bocas do fogão desconhecidas (se a receita usa fogão), equipamento que a receita usa e ela não tem ou ainda não disse se tem, técnica que a receita exige e não está confirmada no perfil, ingrediente que falta sem compra confirmada. `recipe_update` só grava a aceitação quando essa lista está vazia e as compras cabem no orçamento. `dish_price` recusa qualquer prato não aceito. A consultora conduz a conversa; a garantia não depende dela.
 
-O resto da cozinha (forno, panela de pressão, air fryer, liquidificador, gás ou elétrico, espaço na geladeira) é perguntado na primeira conversa porque orienta que receitas propor, mas só bloqueia um prato que o exige. Uma receita de fogão não espera a resposta sobre a air fryer, e uma cozinheira que não sabe responder algo segue adiante.
+O perfil da cozinha tem a forma do enunciado: equipamentos (as bocas do fogão como número, o resto como nomes que o modelo escolhe: forno, panela de pressão, air fryer, churrasqueira), técnicas e habilidades (também por nome), e restrições operacionais (tempo por cozinhada e o resto em texto). Nada disso é enumeração fechada em código. O que bloqueia um prato é o que ele exige e o código consegue comparar: uma receita de fogão não espera a resposta sobre a air fryer, e o tempo por cozinhada, que só o modelo sabe pesar contra uma receita, é perguntado pela skill mas não trava nada. O fogão é o único equipamento guardado como número porque é o único de que uma receita precisa em quantidade (bocas ao mesmo tempo) e o único que o código compara.
 
 O que se vende no delivery é a porção montada. Quando a página descreve só o preparo principal, a consultora pergunta como a Dona Maria monta a marmita e registra os acompanhamentos da despensa por porção (`per_portion_items`); a tool multiplica pelo rendimento da receita.
 
@@ -69,16 +70,16 @@ As seis tools:
 
 1. `pantry_inventory` lê a planilha, cruza as duas abas por nome, converte cada item para unidade base (g, ml ou un) e devolve estoque e custo unitário derivado (`preço total pago ÷ quantidade comprada`), com a linha de origem.
 2. `pantry_amend` registra um fato que a planilha não tem e a cozinheira informou: tamanho da embalagem de um item contado em unidades, ou correção de preço.
-3. `kitchen_profile` lê ou atualiza o perfil da cozinha e devolve os campos ainda desconhecidos e quando ela falou da cozinha pela última vez.
+3. `kitchen_profile` lê ou atualiza o perfil da cozinha (os fatos novos se somam aos gravados) e devolve o que ainda falta para qualquer prato e quando ela falou da cozinha pela última vez.
 4. `recipe_register` registra uma receita extraída de uma página real, converte as medidas, compara com a despensa e a cozinha, e devolve o que ela tem, o que falta e os bloqueios.
-5. `recipe_update` grava o que ela disse: se gostou, técnicas confirmadas, compras confirmadas (como embalagens) e a aceitação.
+5. `recipe_update` grava o que ela disse sobre a receita: se gostou, compras confirmadas (como embalagens) e a aceitação. Mudar as compras ou deixar de gostar desfaz um aceite anterior, porque o custo mudou.
 6. `dish_price` calcula o CMV por porção linha a linha, o preço mínimo e cenários por margem, e registra o preço escolhido.
 
 ## Decisões de arquitetura
 
-**Modelo e provider.** OpenAI direto, sem intermediário no caminho dos dados. `gpt-5.6-terra` no loop da conversa, onde a consultora precisa raciocinar e lembrar restrições; `gpt-5.6-luna`, da mesma geração e dez vezes mais barato, nas tarefas mecânicas. O Hermes é agnóstico de provider (a troca é o bloco `model:` do config e uma variável no `.env`), então a escolha foi por aderência ao que a página de vaga cita e por manter um vendor só, como se faria em produção. As chamadas do modelo principal vão com `store: false`, por isso não aparecem no console de logs da OpenAI.
+**Modelo e provider.** OpenAI direto, sem intermediário no caminho dos dados. `gpt-6-sol` no loop da conversa, onde a consultora precisa raciocinar, lembrar restrições e usar juízo (a OpenAI o posiciona para workflows agênticos); `gpt-6-luna`, vinte vezes mais barato, nas tarefas mecânicas: triagem de escopo, recusa fora de escopo, título de sessão, compressão. Os dois foram lançados em 22 de setembro de 2026 e substituíram `gpt-5.6-terra` e `gpt-5.6-luna` no mesmo dia, com a suíte rodada nos quatro (tabela abaixo). O Hermes é agnóstico de provider (a troca é o bloco `model:` do config e uma variável no `.env`). As chamadas do modelo principal vão com `store: false`, por isso não aparecem no console de logs da OpenAI. Limite a observar: na organização usada, `gpt-6-luna` tem 200 mil tokens por minuto e cada chamada do loop carrega 40 a 80 mil tokens de contexto; por isso ele não fica no loop, apenas nas tarefas de contexto curto.
 
-**Busca.** Firecrawl como backend único de busca e extração. O que importa aqui não é ranking, é fidelidade da extração: as quantidades da página alimentam o CMV. Toda receita apresentada carrega o link e o rendimento da página; a consultora não inventa receitas nem links.
+**Busca.** Firecrawl como backend único de busca e extração. O que importa aqui não é ranking, é fidelidade da extração: as quantidades da página alimentam o CMV. Toda receita apresentada carrega o link e o rendimento da página; a consultora não inventa receitas nem links. Preços de compras não são pesquisados: a consultora propõe do próprio conhecimento do mercado e a Dona Maria confirma ou corrige, que é como se faz com quem conhece o mercado dela. Uma rodada anterior gastava dezoito buscas por consulta procurando preço de pimentão.
 
 **Tools em plugin, não em skill nem em MCP.** O guia do próprio Hermes diz: skill quando cabe em instruções mais tools existentes; tool quando a lógica precisa executar de forma precisa toda vez. O gate, a matemática e o estado precisam. Plugin em vez de MCP porque são funções Python em processo, e um servidor a mais não compraria nada. Plugin em vez de editar o core porque fork não se revisa.
 
@@ -90,7 +91,9 @@ As seis tools:
 
 **Profile autoral.** `config.yaml` é escrito à mão, comentado, com `_config_version` fixado para o Hermes não migrar e reescrever o arquivo. O marcador `.no-bundled-skills` impede a semeadura das skills de fábrica; a única que entra mesmo assim é `hermes-agent`, o manual do próprio framework, que ele trata como essencial (`agent/skill_utils.py`).
 
-**Compras são embalagens.** Ninguém compra duas colheres de vinagre. A consultora propõe a embalagem e um preço de mercado ("vou considerar a caixa de 200 g a R$ 3,50, pode ser?"); a tool calcula quantas embalagens cobrem o que falta, rateia o uso no CMV e desconta as embalagens inteiras do orçamento. Só entra preço que a Dona Maria confirmou.
+**Compras são embalagens.** Ninguém compra duas colheres de vinagre. A consultora propõe a embalagem e um preço de mercado ("vou considerar a caixa de 200 g a R$ 3,50, pode ser?"); a tool calcula quantas embalagens cobrem o que falta, rateia o uso no CMV e desconta as embalagens inteiras do orçamento. Só entra compra marcada como confirmada por ela.
+
+**O modelo decide onde o código não deve.** Nomes de equipamento e técnica, equivalências que a tabela de conversões não cobre ("um pimentão dá uma xícara picada"), temperos usados "a olho", e o olhar de mercado sobre o preço são decisões do modelo, propostas a ela para confirmar. O código guarda o que precisa ser garantido: a matemática, o gate, o dinheiro comprometido, e o registro de cada confirmação dela. Vale dizer com precisão o que isso garante: que o modelo registrou uma confirmação (`liked`, `confirmed_by_cook`, `stated_by_cook`, a técnica no perfil) antes de qualquer passo que dependa dela. Que a confirmação corresponde ao que ela disse é o que a suíte e o transcript verificam, não o código.
 
 **Escopo e custo.** Antes do primeiro chamado ao modelo em cada turno de usuário, um middleware `llm_request` tria a última mensagem com o modelo barato (cerca de 180 tokens, pelo `ctx.llm` do Hermes, com credenciais do host). Se ela é claramente alheia à consulta, a requisição é reescrita: modelo barato, instrução mínima de recusa, sem tools e sem os 8 mil tokens de prompt. Um hook `post_api_request` grava no log qual modelo o provider reporta ter servido. Respostas a perguntas de `clarify` não passam pelo middleware; para elas vale a regra de escopo do `SOUL.md`. A triagem falha aberta: se quebrar, o turno segue pelo caminho normal, com aviso no log.
 
@@ -104,7 +107,7 @@ As seis tools:
 | E o tracing? | Langfuse, opcional: um trace por turno, uma geração por chamada de modelo, um span por tool call, agrupados pelo id de sessão do Hermes, com tokens e custo. | Plugin bundled `observability/langfuse` |
 | O que o agente pode fazer? | Só o toolset acima. Sem terminal, arquivos, browser ou código. | `profile/config.yaml` |
 | E segredos e injeção? | Redação de segredos ligada por padrão no Hermes, forçada de novo pelo plugin do Langfuse antes de exportar (`capture_mode: sanitized`). SOUL e context files passam pelo scanner de injeção do Hermes; conteúdo de página é tratado como dado, por regra do `SOUL.md`. | Config do Hermes; `profile/SOUL.md` |
-| Como se sabe que uma mensagem fora de escopo não gastou o modelo principal? | Duas linhas de log por turno: `rerouted to gpt-5.6-luna` (nossa decisão) e `served by gpt-5.6-luna` (o provider). | `logs/agent.log`; verificação `off_topic_turns_rerouted` na suíte |
+| Como se sabe que uma mensagem fora de escopo não gastou o modelo principal? | Duas linhas de log por turno: `rerouted to gpt-6-luna` (nossa decisão) e `served by gpt-6-luna` (o provider). | `logs/agent.log`; verificação `off_topic_turns_rerouted` na suíte |
 
 Limitações conhecidas do tracing: o plugin bundled do Hermes fala a API do SDK v3 do Langfuse; organizações novas do Langfuse só ingerem pelo caminho do v4, então o profile instala o v4. Com isso, a prévia de entrada e saída no nível do trace fica vazia (o span raiz de cada turno tem as duas), e o `userId` não é preenchido porque o Hermes não carrega identidade de usuário em sessões de CLI.
 
@@ -112,10 +115,10 @@ Limitações conhecidas do tracing: o plugin bundled do Hermes fala a API do SDK
 
 Quatro camadas, da mais barata à mais cara:
 
-1. **Testes de unidade** (`tests/`, 69 testes): os oito formatos de unidade da planilha, a derivação do custo unitário como o enunciado define, as conversões e suas recusas, cada condição do gate nomeando seu bloqueio, as fórmulas de preço, as recusas do contrato das tools (preço abaixo do piso, compra do que não falta, aceite com bloqueio, orçamento partilhado entre pratos, re-registro de prato aceito), e o guarda de escopo. Nenhum teste de getter.
-2. **Cenários simulados** (`evals/scenarios/`): uma Dona Maria interpretada por um modelo barato, com fatos escondidos que ela só revela se perguntada, rodada contra o agente real (mesmo runtime, tools, skills e banco de sessões do CLI). Três cenários: sem forno e sem saber selar carne; pedidos fora de escopo no meio da consulta; retorno no dia seguinte com o cardápio de ontem e uma mudança na cozinha.
+1. **Testes de unidade** (`tests/`, 85 testes): os oito formatos de unidade da planilha, a derivação do custo unitário como o enunciado define, as conversões e suas recusas, cada condição do gate nomeando seu bloqueio, as fórmulas de preço, as recusas do contrato das tools (preço abaixo do piso, compra do que não falta, aceite com bloqueio, orçamento partilhado entre pratos, re-registro de prato aceito, aceite desfeito quando as compras mudam, correção da despensa), o guarda de escopo, os estados semeados dos cenários e as verificações da própria suíte. Nenhum teste de getter.
+2. **Cenários simulados** (`evals/scenarios/`): uma Dona Maria interpretada pelo modelo barato do profile, com fatos escondidos que ela só revela se perguntada, rodada contra o agente real (mesmo runtime, tools, skills e banco de sessões do CLI). Três cenários: sem forno e sem saber selar carne; pedidos fora de escopo no meio da consulta; retorno no dia seguinte com o cardápio de ontem e uma mudança na cozinha. O harness encerra a conversa quando a cozinheira se despede ou quando repete a mesma mensagem duas vezes, que é o sinal de que os dois lados ficaram esperando o outro.
 3. **Verificações determinísticas** (`evals/checks.py`): lidas do que as tools gravaram, dos resultados que devolveram e do log. Aceite só depois de gostar e confirmar técnicas; preço só depois do aceite; preço escolhido acima do piso que a tool calculou; piso e cenários ditos à Dona Maria iguais aos da tool no mesmo turno (a única verificação que lê a prosa, justamente para compará-la com o dado); receita registrada só de página extraída; turnos fora de escopo servidos pelo modelo barato, e nenhum desvio quando o cenário não tem turno fora de escopo; nenhuma pergunta de cozinha repetida no retorno.
-4. **Rubrica binária** (`evals/judge.py`): onze critérios de qualidade da conversa para uma pessoa simples, cada um respondido sim ou não por um juiz com a evidência do transcript; a nota é a fração. O juiz vê a conversa como a Dona Maria a viu e, entre as falas, as tool calls que a consultora fez, para distinguir fato confirmado de fato assumido. Critérios: no máximo três perguntas por mensagem, preço proposto em vez de perguntado, linguagem simples, link e rendimento em toda receita, números rastreados, nada fechado cedo, fora de escopo recusado em uma frase, nada assumido, decisão dela, nada perguntado duas vezes, fala de pessoa e não de sistema.
+4. **Rubrica binária** (`evals/judge.py`): onze critérios de qualidade da conversa para uma pessoa simples, cada um respondido sim ou não por um juiz com a evidência do transcript; a nota é a fração. O juiz é o `claude-sonnet-5`, de outro fornecedor que o da consultora, de propósito: um modelo avaliando a própria família tende a perdoar o próprio estilo, e o custo do juiz não escala com clientes, então ele pode ser mais forte que o modelo do loop. O juiz vê a conversa como a Dona Maria a viu e, entre as falas, as tool calls que a consultora fez, para distinguir fato confirmado de fato assumido. Critérios: no máximo três perguntas por mensagem, preço proposto em vez de perguntado, linguagem simples, link e rendimento em toda receita, números rastreados, nada fechado cedo, fora de escopo recusado em uma frase, nada assumido, decisão dela, nada perguntado duas vezes, fala de pessoa e não de sistema.
 
 Os scores das camadas 3 e 4 são anexados à sessão correspondente no Langfuse, para que trace e avaliação fiquem juntos.
 
@@ -123,7 +126,7 @@ Os scores das camadas 3 e 4 são anexados à sessão correspondente no Langfuse,
 ./scripts/evaluate.sh scenarios/sem-forno.yaml scenarios/fora-de-escopo.yaml scenarios/segundo-dia.yaml
 ```
 
-Cada rodada da suíte reseta o estado da consulta e a memória do Hermes antes de cada cenário, para que nada de uma Dona Maria simulada vaze para a próxima. Nenhum nome de modelo está escrito na suíte: o modelo principal, o barato (que serve os turnos fora de escopo e interpreta a Dona Maria) e o juiz vêm do `config.yaml` do profile, e cada um se troca por argumento (`--model`, `--cook-model`, `--judge-model`) sem tocar no config.
+Cada rodada da suíte reseta o estado da consulta e a memória do Hermes antes de cada cenário, para que nada de uma Dona Maria simulada vaze para a próxima. O modelo principal e o barato (que serve os turnos fora de escopo e interpreta a Dona Maria) vêm do `config.yaml` do profile; cada um se troca por argumento (`--model`, `--cook-model`, `--judge-model`) sem tocar no config. O custo é calculado sobre os tokens que o Hermes contou, com os preços de lista da OpenAI em `evals/prices.yaml` (com a fonte e a data), porque a tabela interna do Hermes é de julho e cobrava o luna 5.6 a cinco vezes o preço atual.
 
 Última rodada, com a suíte na forma atual (sete verificações, onze critérios), um run por cenário e por modelo:
 
@@ -145,7 +148,7 @@ Como ler a tabela:
 
 O modelo entregue continua sendo o terra, e a rodada do luna mostra por quê. Na rubrica os dois são indistinguíveis com esta amostra, e o luna custa de três a cinco vezes menos. Mas no cenário de retorno o luna registrou uma receita cuja página não tinha extraído (verificação `recipes_come_from_extracted_pages`), quebrando a regra de que toda receita vem de uma página lida, e custeou "1 xícara de vagem" pelo preço do pacote inteiro. São falhas de disciplina com as tools, que o gate não cobre e que uma cozinheira não perceberia. Em produção, a troca seria decidida com várias repetições por cenário e um terceiro modelo como juiz, não com esta amostra.
 
-O que a suíte encontrou e virou correção, na ordem em que apareceu: receitas registradas sem técnica declarada deixavam o gate sem o que confirmar (hoje o modelo exige ao menos um método de cocção por receita); uma opção "4 ou mais" numa pergunta sobre bocas do fogão fazia a consultora gravar "4" como certeza; valores com quatro casas decimais chegavam à conversa; a memória de preferências de um cenário vazava para o seguinte no harness; e, na última rodada, a consultora achou a transcrição de outra consulta pelo `session_search` e deu um segundo prato como fechado sem confirmar nada, o que tirou essa tool do toolset. Do lado do avaliador: técnicas confirmadas em conversas anteriores não contavam, fatos da planilha eram lidos como assunção, um cenário que termina antes do preço era cobrado por ele, e a verificação de preço lia a prosa com uma expressão regular em vez de comparar com o resultado da tool.
+O que a suíte encontrou e virou correção, na ordem em que apareceu (a parte final desta lista é do último dia): receitas registradas sem técnica declarada deixavam o gate sem o que confirmar (hoje o modelo exige ao menos um método de cocção por receita); uma opção "4 ou mais" numa pergunta sobre bocas do fogão fazia a consultora gravar "4" como certeza; valores com quatro casas decimais chegavam à conversa; a memória de preferências de um cenário vazava para o seguinte no harness; e, na última rodada, a consultora achou a transcrição de outra consulta pelo `session_search` e deu um segundo prato como fechado sem confirmar nada, o que tirou essa tool do toolset. Do lado do avaliador: técnicas confirmadas em conversas anteriores não contavam, fatos da planilha eram lidos como assunção, um cenário que termina antes do preço era cobrado por ele, e a verificação de preço lia a prosa com uma expressão regular em vez de comparar com o resultado da tool. Com os modelos novos: o `gpt-6-sol` travou duas consultas esperando a Dona Maria medir os temperos que ela usa "a olho" (a rubrica deu 100% e 91% para essas conversas; a verificação determinística de preço as reprovou, que é o motivo de existirem as duas camadas), e a consultora gastava dezoito buscas por consulta procurando preço de pimentão. As duas viraram regra de skill: quantidade proposta em vez de esperada, preço proposto em vez de pesquisado.
 
 ## Premissas
 
@@ -159,8 +162,9 @@ O que a suíte encontrou e virou correção, na ordem em que apareceu: receitas 
 8. Itens contados em unidades sem tamanho de embalagem na planilha (a cobertura de chocolate a R$ 79,90) não podem ser custeados em gramas: a conversão recusa, a consultora pergunta o tamanho e registra com `pantry_amend`. Ovos são contados e não precisam de tamanho.
 9. O estoque é verificado para um lote da receita; a operação contínua do delivery está fora do escopo.
 10. Uma cozinheira, uma cozinha, um cardápio: o estado não é multiusuário.
-11. Um preço abaixo do custo não é registrado. Ela decide entre preços a partir do piso; a tool recusa o resto e a consultora explica o motivo.
+11. Um preço abaixo do custo não é registrado. Ela decide entre preços a partir do piso; a tool recusa o resto e a consultora explica o motivo. Os cenários de margem são uma referência, não um teto: a consultora diz quanto pratos parecidos custam no delivery, porque a conta cobre só ingredientes e um prato barato de ingrediente sairia a R$ 4,00.
 12. As compras confirmadas de uma receita substituem a lista anterior a cada `recipe_update`, por desenho: a lista é a que ela confirmou por último, sem restos de uma tentativa anterior.
+13. Quantidades ditas "a olho" ou "a gosto" viram uma quantidade explícita proposta pela consultora e dita a ela, para corrigir; ninguém espera a próxima leva para custear.
 
 ## Limites conhecidos
 
@@ -168,11 +172,12 @@ O que um leitor com tempo encontraria, dito antes:
 
 1. **Concorrência.** O estado é JSON com escrita atômica, sem lock. Duas conversas com a mesma cozinheira ao mesmo tempo poderiam perder uma escrita. O enunciado tem uma cozinheira; em produção, isso viraria um banco com transação por consulta.
 2. **Versão do estado.** `kitchen.json` e `menu.json` são validados pelos modelos Pydantic ao carregar, mas não carregam número de versão. Mudar um campo obrigatório exige migrar o arquivo à mão.
-3. **Amostra.** Um run por cenário e por modelo. A rubrica varia entre rodadas iguais; as verificações determinísticas não. O juiz é, por padrão, o mesmo modelo que conduz a conversa (`--judge-model` troca), o que tende a ser complacente com o próprio estilo.
+3. **Amostra.** Poucos runs por cenário e por modelo. A rubrica varia entre rodadas iguais; as verificações determinísticas não. O juiz é de outro fornecedor, mas continua sendo um modelo lendo uma conversa: a evidência que ele cita em cada veredito está nos scores da sessão para quem quiser discordar dele.
 4. **Fidelidade da extração.** A verificação garante que toda receita registrada veio de uma página extraída, não que as quantidades registradas são as da página. Isso pediria um conjunto de páginas com gabarito.
 5. **Injeção por página.** A regra do `SOUL.md` e o scanner do Hermes cobrem o caso; não há cenário com uma página hostil na suíte.
 6. **Latência de pesquisa.** O turno de pesquisa leva até dois minutos, limitado pelo backend de busca. No dashboard as tool calls aparecem enquanto acontecem; no CLI, a consultora avisa que vai pesquisar e a espera fica sem sinal.
 7. **Orçamento e taxa são parâmetros do config**, não algo que a Dona Maria muda na conversa. O enunciado os fixa.
+8. **Limite de tokens por minuto.** Cada chamada do loop carrega o contexto inteiro (40 a 80 mil tokens, a maior parte servida do cache, mas contada no limite). Um modelo com limite baixo na organização (o `gpt-6-luna` no dia do lançamento: 200 mil por minuto) estoura no turno de pesquisa, e o Hermes devolve à conversa o texto do erro do provider, em inglês. Em produção isso pede ou limite maior ou compressão de contexto (`compression.threshold_tokens`), ainda não ligada aqui porque o ledger já guarda os fatos e a compressão traria um resumo automático para o meio da consulta.
 
 ## O que ficou de fora
 
@@ -189,7 +194,7 @@ profile/                      o profile do Hermes: instalável com hermes profil
   skills/sabor-da-maria/      recipe-research, kitchen-constraints, menu-costing
   plugins/menu_costing/       tools.py (fronteira), scope.py (guarda), domain/ (regras puras)
 tests/                        pytest sobre o domínio, o contrato das tools e o guarda
-evals/                        harness com cozinheira simulada, verificações, juiz, suíte
+evals/                        harness com cozinheira simulada, verificações, juiz, métricas, preços, suíte
 scripts/                      install.sh, converse.sh, evaluate.sh
 docs/                         enunciado do case
 ```

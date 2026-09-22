@@ -7,7 +7,7 @@ license: MIT
 
 env_requires:
   - name: OPENAI_API_KEY
-    description: "OpenAI: modelo principal (gpt-5.6-terra) e auxiliares (gpt-5.6-luna)"
+    description: "OpenAI: modelo principal (gpt-6-sol) e auxiliares (gpt-6-luna)"
     required: true
   - name: FIRECRAWL_API_KEY
     description: "Firecrawl: busca e extração das páginas de receita"
@@ -17,6 +17,9 @@ env_requires:
     required: false
   - name: HERMES_LANGFUSE_SECRET_KEY
     description: "Langfuse: tracing das conversas (opcional)"
+    required: false
+  - name: ANTHROPIC_API_KEY
+    description: "Anthropic: juiz da suíte de avaliação (opcional, só para evals/)"
     required: false
 
 distribution_owned:

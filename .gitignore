@@ -8,7 +8,6 @@ __pycache__/
 
 # Hermes runtime state written into the profile while developing with HERMES_HOME=profile
 profile/.env
-profile/.env.EXAMPLE
 profile/auth.json
 profile/auth.lock
 profile/state.db*
