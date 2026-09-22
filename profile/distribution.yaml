@@ -21,6 +21,7 @@ env_requires:
 
 distribution_owned:
   - distribution.yaml
+  - .no-bundled-skills
   - SOUL.md
   - config.yaml
   - skills/
