@@ -3,16 +3,16 @@
 
 model:
   provider: openai-api
-  default: gpt-5.6-terra
+  default: gpt-6-sol
 
 # Side tasks (context compression, session titles) do not need the main model's reasoning.
 auxiliary:
   compression:
     provider: openai-api
-    model: gpt-5.6-luna
+    model: gpt-6-luna
   title_generation:
     provider: openai-api
-    model: gpt-5.6-luna
+    model: gpt-6-luna
   # The post-turn self-improvement review writes memory and skills unprompted.
   background_review:
     enabled: false
@@ -58,11 +58,11 @@ plugins:
         margins: [0.20, 0.35, 0.50]
         # Off-topic turns are triaged and answered by the cheap model, never by the main one.
         scope_guard: true
-        scope_model: gpt-5.6-luna
+        scope_model: gpt-6-luna
       # The plugin may pick this one cheaper model for its own calls; nothing else.
       llm:
         allow_model_override: true
-        allowed_models: [gpt-5.6-luna]
+        allowed_models: [gpt-6-luna]
 
 display:
   language: pt

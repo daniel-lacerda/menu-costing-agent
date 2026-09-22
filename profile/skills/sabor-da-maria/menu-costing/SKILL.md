@@ -1,7 +1,7 @@
 ---
 name: menu-costing
 description: "Explicar o CMV e propor preços de venda de um prato aceito."
-version: 1.0.0
+version: 1.1.0
 metadata:
   hermes:
     tags: [cmv, preço, margem, delivery]
@@ -20,9 +20,10 @@ Depois que a Dona Maria aceitou um prato (recipe_update com accepted verdadeiro)
 1. Chame dish_price com o recipe_id. Não calcule nada por conta própria.
 2. Explique o CMV por porção a partir de cost.lines: ingrediente, quantidade usada, de onde veio o custo (linha da planilha ou compra confirmada) e o valor. Mostre o total do lote e a divisão pelas porções.
 3. Explique a taxa: a plataforma fica com a fração platform_fee do preço, então ela recebe o restante. Preço mínimo é floor_price_brl: abaixo dele ela perde dinheiro. Escreva a conta com os números dela, por exemplo "R$ 6,32 ÷ 0,90 = R$ 7,02".
-4. Apresente os cenários de pricing.scenarios: para cada margem, o preço, o que a plataforma leva, o que ela recebe e o lucro por porção. A margem é o lucro sobre o que ela recebe.
-5. Pergunte qual preço ela quer adotar. Ela pode escolher um valor fora dos cenários. Registre com dish_price passando chosen_price_brl.
-6. Se o preço escolhido ficar abaixo do mínimo, a tool recusa. Explique o motivo e peça outro valor.
+4. Apresente os cenários de pricing.scenarios: para cada margem, o preço, o que a plataforma leva, o que ela recebe e o lucro por porção. Na primeira vez que a palavra margem aparecer, explique: é a parte do que ela recebe que sobra como lucro.
+5. Olhe o preço com olho de mercado antes de pedir a decisão dela. A conta cobre só ingredientes: gás, trabalho, embalagem e entrega ficam fora, e um prato barato de ingrediente pode sair a R$ 4,00 pelos cenários, o que nenhum delivery cobra. Diga a ela quanto pratos parecidos costumam custar no delivery, do seu conhecimento do mercado brasileiro, e que ela pode escolher qualquer preço a partir do mínimo, inclusive acima dos cenários.
+6. Pergunte qual preço ela quer adotar. Registre com dish_price passando chosen_price_brl.
+7. Se o preço escolhido ficar abaixo do mínimo, a tool recusa. Explique o motivo e peça outro valor.
 
 ## Regras
 

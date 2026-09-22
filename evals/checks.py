@@ -10,10 +10,14 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "profile" / "plugins"))
+from menu_costing.domain.models import KitchenProfile  # noqa: E402
 
 
 class Check(BaseModel):
@@ -268,14 +272,25 @@ def off_topic_turns_rerouted(run: RunArtifacts, expected: int, cheap_model: str)
     )
 
 
-def no_kitchen_question_repeated(run: RunArtifacts, known_fields: set[str]) -> Check:
-    """On a return visit, fields already on file are not written again from her answers."""
-    rewritten: set[str] = set()
+def no_kitchen_question_repeated(run: RunArtifacts, on_file: dict[str, Any]) -> Check:
+    """On a return visit, facts already on file are not written again with the same value.
+
+    Writing a different value is her correcting the record, which the recap invites.
+    """
+    repeated: list[str] = []
     for call in run.calls():
-        if call.name == "kitchen_profile":
-            rewritten.update(k for k in call.arguments if k in known_fields and k != "techniques")
+        if call.name != "kitchen_profile":
+            continue
+        for field in KitchenProfile.REQUIRED:
+            if field in call.arguments and on_file.get(field) is not None:
+                repeated.append(field)
+        for facts in ("equipment", "techniques"):
+            known = {k.casefold(): v for k, v in (on_file.get(facts) or {}).items()}
+            for name, value in (call.arguments.get(facts) or {}).items():
+                if known.get(name.casefold()) == value:
+                    repeated.append(f"{facts}:{name}")
     return Check(
         name="no_kitchen_question_repeated",
-        passed=not rewritten - {"oven"},
-        evidence=f"fields rewritten on return: {sorted(rewritten)} (oven changed by design)",
+        passed=not repeated,
+        evidence=f"rewritten with the value already on file: {repeated or 'nothing'}",
     )

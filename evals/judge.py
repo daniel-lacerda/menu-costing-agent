@@ -2,6 +2,10 @@
 
 Binary criteria summed are more reliable from a model judge than a single 0 to 5 grade, and each
 answer carries the quote that decided it, so a reviewer can disagree with the judge on a fact.
+
+The judge is a Claude model, from a different vendor than the consultant on purpose: a model
+grading its own family tends to forgive its own style, and the judge's cost does not scale with
+customers, so it may be a stronger model than the one in the loop.
 """
 
 from __future__ import annotations
@@ -9,8 +13,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from openai import OpenAI
-from pydantic import BaseModel, Field
+from anthropic import Anthropic
+from pydantic import BaseModel, Field, model_validator
 
 CRITERIA: dict[str, str] = {
     "max_three_questions": "Nenhuma mensagem da consultora faz mais de três perguntas.",
@@ -69,6 +73,13 @@ class Verdict(BaseModel):
 class RubricResult(BaseModel):
     verdicts: list[Verdict]
 
+    @model_validator(mode="after")
+    def _one_verdict_per_criterion(self) -> RubricResult:
+        names = sorted(v.criterion for v in self.verdicts)
+        if names != sorted(CRITERIA):
+            raise ValueError(f"judge answered {names}, rubric has {sorted(CRITERIA)}")
+        return self
+
     @property
     def score(self) -> float:
         return sum(v.passed for v in self.verdicts) / len(self.verdicts)
@@ -100,51 +111,31 @@ def _call_summary(call: dict[str, Any]) -> str:
     return f"{call['name']}({keys})"
 
 
-def judge(client: OpenAI, transcript: str, known_facts: str, model: str) -> RubricResult:
-    schema = {
-        "type": "object",
-        "properties": {
-            "verdicts": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "criterion": {"type": "string", "enum": list(CRITERIA)},
-                        "passed": {"type": "boolean"},
-                        "evidence": {"type": "string"},
-                    },
-                    "required": ["criterion", "passed", "evidence"],
-                    "additionalProperties": False,
-                },
-            }
-        },
-        "required": ["verdicts"],
-        "additionalProperties": False,
-    }
+def judge(client: Anthropic, transcript: str, known_facts: str, model: str) -> RubricResult:
     rubric = "\n".join(f"- {key}: {text}" for key, text in CRITERIA.items())
-    response = client.responses.create(
+    response = client.messages.parse(
         model=model,
-        instructions=(
+        max_tokens=16000,
+        system=(
             "Você avalia a conversa entre uma consultora de cardápio e a Dona Maria, uma "
             "cozinheira simples. Para cada critério da rubrica responda passed verdadeiro ou "
             "falso, com uma evidência curta tirada do transcript. Seja rigoroso: na dúvida, "
-            "falso. Responda com um veredito para cada critério, exatamente uma vez cada. As "
-            "linhas [tools] mostram o que a consultora registrou antes de responder; a Dona "
-            "Maria não as vê."
+            "falso. Responda com um veredito para cada critério, exatamente uma vez cada, usando "
+            "o nome do critério como está na rubrica. As linhas [tools] mostram o que a "
+            "consultora registrou antes de responder; a Dona Maria não as vê."
         ),
-        input=(
-            f"Rubrica:\n{rubric}\n\nFatos que a consultora já tinha (planilha da despensa e "
-            f"conversas anteriores), que não contam como assunção:\n{known_facts or 'nenhum'}"
-            f"\n\nTranscript:\n{transcript}"
-        ),
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": "rubric",
-                "schema": schema,
-                "strict": True,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"Rubrica:\n{rubric}\n\nFatos que a consultora já tinha (planilha da despensa "
+                    "e conversas anteriores), que não contam como assunção:\n"
+                    f"{known_facts or 'nenhum'}\n\nTranscript:\n{transcript}"
+                ),
             }
-        },
+        ],
+        output_format=RubricResult,
     )
-    payload = json.loads(response.output_text)
-    return RubricResult.model_validate(payload)
+    result = response.parsed_output
+    assert result is not None, response.stop_reason
+    return result

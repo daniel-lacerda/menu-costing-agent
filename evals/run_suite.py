@@ -18,6 +18,7 @@ from typing import Any
 
 import requests
 import yaml
+from anthropic import Anthropic
 from checks import (
     Check,
     RunArtifacts,
@@ -32,12 +33,10 @@ from checks import (
 from converse import cheap_model
 from judge import RubricResult, judge, transcript_text
 from metrics import Metrics, collect
-from openai import OpenAI
 from pydantic import BaseModel, Field
 
 EVALS = Path(__file__).resolve().parent
 sys.path.insert(0, str(EVALS.parent / "profile" / "plugins"))
-from menu_costing.domain.models import KitchenProfile  # noqa: E402
 from menu_costing.domain.pantry import load_pantry  # noqa: E402
 
 
@@ -93,10 +92,10 @@ def evaluate(scenario: Path, run_dir: Path, home: Path, models: Models) -> RunRe
         off_topic_turns_rerouted(run, expectations.off_topic_turns, models.cheap),
     ]
     if expectations.returning:
-        checks.append(no_kitchen_question_repeated(run, set(KitchenProfile.ELICITED)))
+        checks.append(no_kitchen_question_repeated(run, kitchen_on_file(scenario)))
     cook_transcript = json.loads((run_dir / "cook_transcript.json").read_text("utf-8"))
     known = known_facts(scenario, home / "data" / "despensa_dona_maria.xlsx")
-    rubric = judge(OpenAI(), transcript_text(run.turns, cook_transcript), known, models.judge)
+    rubric = judge(Anthropic(), transcript_text(run.turns, cook_transcript), known, models.judge)
     report = RunReport(
         scenario=scenario.stem,
         model=models.main,
@@ -108,6 +107,16 @@ def evaluate(scenario: Path, run_dir: Path, home: Path, models: Models) -> RunRe
     )
     (run_dir / "report.json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
     return report
+
+
+def kitchen_on_file(scenario: Path) -> dict[str, Any]:
+    """The kitchen the scenario starts from, before the consultant touches it."""
+    state = (yaml.safe_load(scenario.read_text("utf-8")) or {}).get("state")
+    path = scenario.parent / state / "kitchen.json" if state else None
+    if path is None or not path.exists():
+        return {}
+    kitchen: dict[str, Any] = json.loads(path.read_text("utf-8"))
+    return kitchen
 
 
 def known_facts(scenario: Path, pantry: Path) -> str:
@@ -183,7 +192,7 @@ def main() -> int:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--no-langfuse", action="store_true")
     parser.add_argument("--model", help="Main model override; default is the profile's")
-    parser.add_argument("--judge-model", help="Rubric judge; default is the profile's main model")
+    parser.add_argument("--judge-model", default="claude-sonnet-5", help="Rubric judge (Claude)")
     parser.add_argument("--cook-model", help="Simulated cook; default is the profile's cheap model")
     args = parser.parse_args()
 
@@ -198,7 +207,7 @@ def main() -> int:
     models = Models(
         main=args.model or main_model,
         cheap=cheap_model(config),
-        judge=args.judge_model or main_model,
+        judge=args.judge_model,
         cook=args.cook_model or cheap_model(config),
     )
 

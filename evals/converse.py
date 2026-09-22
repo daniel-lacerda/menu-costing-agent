@@ -48,7 +48,9 @@ class SimulatedCook:
         return (
             f"{self.scenario.persona}\n\nFatos sobre você (revele só se perguntada):\n"
             f"{self.scenario.facts}\n\nComo se comportar:\n{self.scenario.behaviour}\n\n"
-            "Responda com uma única mensagem curta, em português, só com o que a Dona Maria diria."
+            "Responda com uma única mensagem curta, em português, só com o que a Dona Maria diria. "
+            "Quando a conversa tiver acabado para você (agradeceu, se despediu ou não tem mais o "
+            "que dizer), termine a mensagem com [FIM]."
         )
 
     def reply(self, consultant_message: str) -> str:
@@ -211,7 +213,12 @@ def main() -> int:
         message = scenario.opening
         for turn in range(1, scenario.max_turns + 1):
             answer, history = exchange(agent, turn, message, history, log)
-            message = cook.reply(answer)
+            previous, message = message, cook.reply(answer)
+            if message == previous:
+                # Both sides are waiting for the other: the consultation stalled, and more
+                # turns would only repeat it.
+                print("\nconversation stalled: the cook repeated herself", flush=True)
+                break
             if END_MARK in message:
                 # The cook's goodbye still deserves an answer; a bare marker does not.
                 message = message.replace(END_MARK, "").strip()

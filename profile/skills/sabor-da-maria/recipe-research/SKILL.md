@@ -1,7 +1,7 @@
 ---
 name: recipe-research
 description: "Buscar receitas reais na internet a partir da despensa."
-version: 1.0.0
+version: 1.1.0
 metadata:
   hermes:
     tags: [receitas, busca, cardápio]
@@ -19,10 +19,10 @@ Ao propor receitas para a Dona Maria, e sempre que ela pedir outra opção.
 
 1. Parta da despensa (pantry_inventory) e do que ela já disse que gosta ou evita. Escolha dois ou três ingredientes que ela tem em quantidade e monte buscas em português, como "receita frango com batata rendimento porções".
 2. Use web_search e escolha páginas de receita que tragam a lista de ingredientes com quantidades e o rendimento em porções. Prefira receitas que rendam quatro porções ou mais; uma receita-base de uma porção não vira marmita. Prefira sites brasileiros de receitas. Descarte vídeos sem texto e páginas sem quantidades.
-3. Use web_extract na página escolhida. Extraia: título, URL, rendimento em porções, cada ingrediente com quantidade e unidade como está escrito, equipamentos necessários (fogao, forno, panela_de_pressao, air_fryer, liquidificador, batedeira, micro_ondas, freezer), quantas bocas usa ao mesmo tempo e as técnicas exigidas. Toda receita tem ao menos uma técnica: o método de cocção (refogar, cozinhar na pressão, assar, fritar, desfiar) entra sempre, para ser confirmado com ela.
+3. Use web_extract na página escolhida. Extraia: título, URL, rendimento em porções, cada ingrediente com quantidade e unidade como está escrito, quantas bocas do fogão usa ao mesmo tempo (burners_needed, 0 se não usa fogão), os equipamentos além do fogão pelo nome (forno, panela de pressão, air fryer, liquidificador) e as técnicas exigidas. Toda receita tem ao menos uma técnica: o método de preparo (refogar, cozinhar na pressão, assar, fritar, desfiar) entra sempre, e as que uma cozinheira pode não dominar (massa fresca, molho branco, ponto de carne) entram à parte, para serem confirmadas com ela.
 4. Apresente sempre duas ou três candidatas por vez, para ela ter escolha. Para cada uma: o link, uma linha sobre por que combina com a despensa dela, e o que faltaria comprar. Pergunte o que ela acha: gosta de cozinhar isso? Vê algum impedimento?
 5. Registre com recipe_register apenas as receitas em que ela demonstrou interesse. Mapeie cada ingrediente ao nome exato da despensa em pantry_item, ou deixe nulo quando ela não tem.
-6. O que se vende no delivery é a porção montada, não o preparo da página. Se a receita descreve só o componente principal (um refogado, um recheio, um molho), pergunte a ela como monta a marmita e registre os acompanhamentos em per_portion_items, com a quantidade por porção que ela disse. O rendimento continua sendo o da página. Embalagem e entrega ficam fora do custo, como no enunciado da consulta; não pergunte sobre elas.
+6. O que se vende no delivery é a porção montada, não o preparo da página. Se a receita descreve só o componente principal (um refogado, um recheio, um molho), pergunte a ela como monta a marmita e registre os acompanhamentos em per_portion_items, com a quantidade por porção que ela disse. Os temperos dos acompanhamentos não viram pergunta: use as quantidades da regra 3 da skill kitchen-constraints e diga o que assumiu. O rendimento continua sendo o da página. Embalagem e entrega ficam fora do custo, como no enunciado da consulta; não pergunte sobre elas.
 
 ## Regras
 
