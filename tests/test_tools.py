@@ -36,6 +36,7 @@ RECIPE = {
         {"name": "creme de leite", "quantity": 200, "unit": "g", "pantry_item": None},
     ],
     "equipment_required": ["fogao"],
+    "techniques_required": ["refogar"],
 }
 
 PURCHASE = {"ingredient": "creme de leite", "quantity": 200, "unit": "g", "price_brl": 4.5}
@@ -64,6 +65,7 @@ def test_acceptance_is_refused_while_the_gate_is_open(tools: dict[str, Tool]) ->
     call(tools, "recipe_register", RECIPE)
     result = call(tools, "recipe_update", {"recipe_id": "r1", "liked": True, "accepted": True})
     assert "creme de leite" in result["error"]
+    assert "refogar" in result["error"]
 
 
 def test_unconfirmed_purchase_prices_are_refused(tools: dict[str, Tool]) -> None:
@@ -84,7 +86,13 @@ def test_purchases_beyond_the_budget_block_acceptance(tools: dict[str, Tool]) ->
     result = call(
         tools,
         "recipe_update",
-        {"recipe_id": "r1", "liked": True, "purchases": [expensive], "accepted": True},
+        {
+            "recipe_id": "r1",
+            "liked": True,
+            "techniques": {"refogar": True},
+            "purchases": [expensive],
+            "accepted": True,
+        },
     )
     assert "orçamento" in result["error"]
 
@@ -96,7 +104,13 @@ def test_accepted_dish_is_priced_and_the_budget_is_committed(tools: dict[str, To
     accepted = call(
         tools,
         "recipe_update",
-        {"recipe_id": "r1", "liked": True, "purchases": [confirmed], "accepted": True},
+        {
+            "recipe_id": "r1",
+            "liked": True,
+            "techniques": {"refogar": True},
+            "purchases": [confirmed],
+            "accepted": True,
+        },
     )
     assert accepted["accepted"] is True
     assert accepted["budget"]["remaining_brl"] == pytest.approx(80.0 - 4.5)

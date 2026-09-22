@@ -90,7 +90,8 @@ def evaluate(scenario: Path, run_dir: Path, home: Path, platform_fee: float) -> 
         }
         checks.append(no_kitchen_question_repeated(run, known))
     cook_transcript = json.loads((run_dir / "cook_transcript.json").read_text("utf-8"))
-    rubric = judge(OpenAI(), transcript_text(run.turns, cook_transcript))
+    known = known_facts(scenario)
+    rubric = judge(OpenAI(), transcript_text(run.turns, cook_transcript), known)
     report = RunReport(
         scenario=scenario.stem,
         run_dir=str(run_dir),
@@ -100,6 +101,15 @@ def evaluate(scenario: Path, run_dir: Path, home: Path, platform_fee: float) -> 
     )
     (run_dir / "report.json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
     return report
+
+
+def known_facts(scenario: Path) -> str:
+    """The kitchen profile a scenario starts with, so the judge does not call it an assumption."""
+    state = (yaml.safe_load(scenario.read_text("utf-8")) or {}).get("state")
+    if not state:
+        return ""
+    kitchen = scenario.parent / state / "kitchen.json"
+    return kitchen.read_text("utf-8") if kitchen.exists() else ""
 
 
 def push_scores(report: RunReport) -> None:

@@ -354,11 +354,18 @@ def _plain(value: Any) -> Any:
     if isinstance(value, BaseModel):
         return _plain(value.model_dump(mode="json"))
     if isinstance(value, dict):
-        return {k: _plain(v) for k, v in value.items()}
+        return {k: _money(k, _plain(v)) for k, v in value.items()}
     if isinstance(value, list | tuple):
         return [_plain(v) for v in value]
     if isinstance(value, float):
         return round(value, 4)
     if isinstance(value, datetime):
         return value.isoformat(timespec="seconds")
+    return value
+
+
+def _money(key: str, value: Any) -> Any:
+    """Amounts in reais are shown with cents; only unit costs keep the precision per gram."""
+    if key.endswith("_brl") and key != "unit_cost_brl" and isinstance(value, float):
+        return round(value, 2)
     return value

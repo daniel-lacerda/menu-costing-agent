@@ -154,10 +154,16 @@ class RecipeInput(BaseModel):
     url: str = Field(description="Página de onde a receita foi extraída")
     yield_portions: int = Field(gt=0, description="Porções que a receita rende")
     ingredients: list[IngredientInput] = Field(min_length=1)
-    equipment_required: list[Equipment] = Field(default_factory=list)
+    equipment_required: list[Equipment] = Field(
+        min_length=1, description="Equipamentos que o preparo usa; fogao no mínimo"
+    )
     burners_needed: int = Field(default=1, ge=0, description="Bocas usadas ao mesmo tempo")
     techniques_required: list[str] = Field(
-        default_factory=list, description="Técnicas que a receita exige (ex.: massa fresca)"
+        min_length=1,
+        description=(
+            "Técnicas que o preparo exige, sempre ao menos o método de cocção "
+            "(refogar, cozinhar na pressão, assar, fritar, desfiar, massa fresca...)"
+        ),
     )
     per_portion_items: list[IngredientInput] = Field(
         default_factory=list,

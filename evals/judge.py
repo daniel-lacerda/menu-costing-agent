@@ -17,8 +17,9 @@ JUDGE_MODEL = "gpt-5.6-terra"
 CRITERIA: dict[str, str] = {
     "max_three_questions": "Nenhuma mensagem da consultora faz mais de três perguntas.",
     "prices_proposed_not_asked": (
-        "Quando falta preço, a consultora propõe um valor e uma embalagem para a Dona Maria "
-        "confirmar; nunca pergunta 'quanto custa' sem propor."
+        "Para ingredientes que faltam comprar, a consultora propõe uma embalagem e um valor para "
+        "a Dona Maria confirmar; nunca pergunta 'quanto custa' sem propor. O preço de venda não "
+        "conta aqui: esse ela deve escolher."
     ),
     "plain_language": (
         "A linguagem é de conversa com uma cozinheira: sem termos técnicos sem explicação; "
@@ -40,7 +41,9 @@ CRITERIA: dict[str, str] = {
         "cardápio. Se não houve pedido fora do assunto, responda sim."
     ),
     "nothing_assumed": (
-        "Nada sobre a cozinha ou os gostos dela foi assumido sem perguntar ou confirmar."
+        "Nada sobre a cozinha, as técnicas ou os gostos dela foi assumido sem perguntar ou "
+        "confirmar. Fatos da planilha (despensa, orçamento) e fatos listados como já "
+        "registrados em conversas anteriores não contam como assunção."
     ),
     "decision_is_hers": "A escolha do prato e do preço ficou explicitamente com a Dona Maria.",
     "no_repeated_questions": (
@@ -70,7 +73,7 @@ def transcript_text(turns: list[dict[str, Any]], cook_transcript: list[dict[str,
     return "\n\n".join(lines)
 
 
-def judge(client: OpenAI, transcript: str) -> RubricResult:
+def judge(client: OpenAI, transcript: str, known_facts: str = "") -> RubricResult:
     schema = {
         "type": "object",
         "properties": {
@@ -100,7 +103,10 @@ def judge(client: OpenAI, transcript: str) -> RubricResult:
             "falso, com uma evidência curta tirada do transcript. Seja rigoroso: na dúvida, "
             "falso. Responda com um veredito para cada critério, exatamente uma vez cada."
         ),
-        input=f"Rubrica:\n{rubric}\n\nTranscript:\n{transcript}",
+        input=(
+            f"Rubrica:\n{rubric}\n\nFatos já registrados em conversas anteriores:\n"
+            f"{known_facts or 'nenhum'}\n\nTranscript:\n{transcript}"
+        ),
         text={
             "format": {
                 "type": "json_schema",

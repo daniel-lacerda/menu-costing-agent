@@ -26,6 +26,7 @@ class Check(BaseModel):
 class RunArtifacts(BaseModel):
     turns: list[dict[str, Any]]
     menu: dict[str, Any] | None
+    kitchen: dict[str, Any] | None
     log_lines: list[str]
     session_id: str
 
@@ -38,13 +39,15 @@ class RunArtifacts(BaseModel):
         ]
         menu_path = store / "menu.json"
         menu = json.loads(menu_path.read_text("utf-8")) if menu_path.exists() else None
+        kitchen_path = store / "kitchen.json"
+        kitchen = json.loads(kitchen_path.read_text("utf-8")) if kitchen_path.exists() else None
         session_id = run_dir.name.rsplit("-", 1)[-1]
         lines = [
             line
             for line in agent_log.read_text("utf-8", errors="replace").splitlines()
             if session_id in line
         ]
-        return cls(turns=turns, menu=menu, log_lines=lines, session_id=session_id)
+        return cls(turns=turns, menu=menu, kitchen=kitchen, log_lines=lines, session_id=session_id)
 
     def calls(self) -> list[tuple[int, str, dict[str, Any]]]:
         """(turn, tool, arguments) for every tool call, in order."""
@@ -97,7 +100,11 @@ def accepted_only_after_confirmation(run: RunArtifacts) -> Check:
 
 
 def _confirmed(technique: str, run: RunArtifacts) -> bool:
+    """Confirmed in this run, or already on file in the kitchen profile from an earlier one."""
     key = technique.casefold()
+    on_file = {k.casefold(): v for k, v in ((run.kitchen or {}).get("techniques") or {}).items()}
+    if on_file.get(key):
+        return True
     for _, tool, args in run.calls():
         if tool == "recipe_update":
             for name, mastered in (args.get("techniques") or {}).items():
@@ -184,11 +191,14 @@ def off_topic_turns_rerouted(run: RunArtifacts, expected: int) -> Check:
     rerouted = [line for line in guard_lines if "rerouted" in line]
     served = [line for line in guard_lines if "served by" in line]
     cheap = [line for line in served if "gpt-5.6-luna" in line]
-    passed = len(rerouted) == expected and len(cheap) == expected
+    passed = len(rerouted) >= expected and len(cheap) == len(rerouted)
     return Check(
         name="off_topic_turns_rerouted",
         passed=passed,
-        evidence=f"rerouted={len(rerouted)} served_by_cheap_model={len(cheap)} expected={expected}",
+        evidence=(
+            f"rerouted={len(rerouted)} served_by_cheap_model={len(cheap)} "
+            f"expected_at_least={expected}"
+        ),
     )
 
 

@@ -95,6 +95,8 @@ def test_a_purchase_in_another_measure_of_the_same_kind_is_converted(
         url="https://example.org/x",
         yield_portions=1,
         ingredients=[IngredientInput(name="vinho", quantity=0.5, unit="xícara de chá")],
+        equipment_required=["fogao"],
+        techniques_required=["refogar"],
     )
     checks = check_ingredients(recipe, pantry, table)
     bottle = PurchaseInput(
@@ -136,6 +138,8 @@ def test_a_pantry_name_the_model_invented_is_rejected(
         ingredients=[
             IngredientInput(name="creme", quantity=1, unit="un", pantry_item="Creme de leite")
         ],
+        equipment_required=["fogao"],
+        techniques_required=["refogar"],
     )
     with pytest.raises(Exception, match="nome exato"):
         check_ingredients(recipe, pantry, table)
