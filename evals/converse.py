@@ -11,6 +11,7 @@ import argparse
 import json
 import shutil
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -82,7 +83,7 @@ class SimulatedCook:
         return response.output_text.strip()
 
 
-def build_agent(session_id: str, cook: SimulatedCook) -> Any:
+def build_agent(session_id: str, cook: SimulatedCook, model: str | None = None) -> Any:
     from hermes_cli.config import load_config
     from hermes_cli.runtime_provider import resolve_runtime_provider
     from hermes_cli.tools_config import _get_platform_tools
@@ -94,7 +95,7 @@ def build_agent(session_id: str, cook: SimulatedCook) -> Any:
         requested=config["model"]["provider"], target_model=config["model"]["default"]
     )
     return AIAgent(
-        model=config["model"]["default"],
+        model=model or config["model"]["default"],
         api_key=runtime.get("api_key"),
         base_url=runtime.get("base_url"),
         provider=runtime.get("provider"),
@@ -135,6 +136,9 @@ def tool_calls_in(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scenario", type=Path)
+    parser.add_argument(
+        "--model", help="Main model override; the provider stays the configured one"
+    )
     args = parser.parse_args()
 
     from hermes_cli.env_loader import load_hermes_dotenv
@@ -146,7 +150,7 @@ def main() -> int:
     reset_store(get_hermes_home(), scenario, args.scenario.parent)
     cook = SimulatedCook(scenario, OpenAI())
     session_id = new_session_id()
-    agent = build_agent(session_id, cook)
+    agent = build_agent(session_id, cook, args.model)
 
     run_dir = Path(__file__).parent / "runs" / f"{scenario.name}-{session_id}"
     run_dir.mkdir(parents=True)
@@ -156,7 +160,9 @@ def main() -> int:
     message = scenario.opening
     for turn in range(1, scenario.max_turns + 1):
         print(f"\n[{turn}] dona maria: {message}", flush=True)
+        started = time.monotonic()
         result = agent.run_conversation(user_message=message, conversation_history=history)
+        seconds = round(time.monotonic() - started, 1)
         seen = len(history or [])
         history = result["messages"]
         calls = tool_calls_in(history[seen:])
@@ -171,6 +177,7 @@ def main() -> int:
                     "cook": message,
                     "tool_calls": calls,
                     "consultant": answer,
+                    "seconds": seconds,
                     "at": datetime.now(UTC).isoformat(),
                 },
                 ensure_ascii=False,
@@ -182,7 +189,9 @@ def main() -> int:
         if END_MARK in message:
             message = message.replace(END_MARK, "").strip()
             print(f"\n[{turn + 1}] dona maria: {message}", flush=True)
+            started = time.monotonic()
             result = agent.run_conversation(user_message=message, conversation_history=history)
+            seconds = round(time.monotonic() - started, 1)
             calls = tool_calls_in(result["messages"][len(history) :])
             for call in calls:
                 print(f"    tool: {call['name']}", flush=True)
@@ -194,6 +203,7 @@ def main() -> int:
                         "cook": message,
                         "tool_calls": calls,
                         "consultant": result["final_response"],
+                        "seconds": seconds,
                         "at": datetime.now(UTC).isoformat(),
                     },
                     ensure_ascii=False,
