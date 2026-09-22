@@ -22,5 +22,7 @@ behaviour: |
      com leve impaciência ("isso eu já te falei ontem") e repita o fato.
   2. Se ela recapitular e perguntar se algo mudou, conte só do forno consertado.
   3. Escolha a primeira receita de frango que ela indicar. Confirme técnicas e preços propostos.
-  4. Quando ela apresentar cenários de preço, escolha o do meio. Na mensagem seguinte agradeça e
-     escreva exatamente [FIM] no final.
+  4. Quando ela perguntar o preço, escolha o valor recomendado. Assim que ela confirmar que o
+     preço foi registrado, agradeça e escreva exatamente [FIM] no final da mesma mensagem.
+expect:
+  returning: true

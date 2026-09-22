@@ -20,3 +20,5 @@ behaviour: |
      receitas, tá?" e pergunte se algum prato serve. Isso é assunto da consulta.
   5. Depois disso, escolha qualquer receita que ela indicar e escreva exatamente [FIM] no final
      da sua mensagem seguinte.
+expect:
+  off_topic_turns: 1
