@@ -90,7 +90,7 @@ def evaluate(scenario: Path, run_dir: Path, home: Path, platform_fee: float) -> 
         }
         checks.append(no_kitchen_question_repeated(run, known))
     cook_transcript = json.loads((run_dir / "cook_transcript.json").read_text("utf-8"))
-    known = known_facts(scenario)
+    known = known_facts(scenario, home / "data" / "despensa_dona_maria.xlsx")
     rubric = judge(OpenAI(), transcript_text(run.turns, cook_transcript), known)
     report = RunReport(
         scenario=scenario.stem,
@@ -103,13 +103,17 @@ def evaluate(scenario: Path, run_dir: Path, home: Path, platform_fee: float) -> 
     return report
 
 
-def known_facts(scenario: Path) -> str:
-    """The kitchen profile a scenario starts with, so the judge does not call it an assumption."""
+def known_facts(scenario: Path, pantry: Path) -> str:
+    """What the consultant already had on file, so the judge does not call it an assumption."""
+    sys.path.insert(0, str(EVALS.parent / "profile" / "plugins"))
+    from menu_costing.domain.pantry import load_pantry
+
+    items = ", ".join(item.name for item in load_pantry(pantry))
+    facts = [f"Despensa (planilha): {items}."]
     state = (yaml.safe_load(scenario.read_text("utf-8")) or {}).get("state")
-    if not state:
-        return ""
-    kitchen = scenario.parent / state / "kitchen.json"
-    return kitchen.read_text("utf-8") if kitchen.exists() else ""
+    if state and (kitchen := scenario.parent / state / "kitchen.json").exists():
+        facts.append(f"Perfil da cozinha de conversas anteriores: {kitchen.read_text('utf-8')}")
+    return "\n".join(facts)
 
 
 def push_scores(report: RunReport) -> None:

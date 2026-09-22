@@ -109,9 +109,16 @@ def build_agent(session_id: str, cook: SimulatedCook) -> Any:
     )
 
 
-def reset_store(store: Path, scenario: Scenario, scenario_dir: Path) -> None:
-    """Every run starts from the scenario's declared state, never from a previous run's."""
+def reset_store(home: Path, scenario: Scenario, scenario_dir: Path) -> None:
+    """Every run starts from the scenario's declared state, never from a previous run's.
+
+    Hermes memory (USER.md, MEMORY.md) is reset too: preferences one simulated cook stated
+    must not leak into the next scenario.
+    """
+    store = home / "consultations"
     shutil.rmtree(store, ignore_errors=True)
+    shutil.rmtree(home / "memories", ignore_errors=True)
+    (home / "memories").mkdir()
     if scenario.state is not None:
         shutil.copytree(scenario_dir / scenario.state, store)
 
@@ -136,7 +143,7 @@ def main() -> int:
 
     load_hermes_dotenv(hermes_home=get_hermes_home())
     scenario = Scenario.model_validate(yaml.safe_load(args.scenario.read_text("utf-8")))
-    reset_store(get_hermes_home() / "consultations", scenario, args.scenario.parent)
+    reset_store(get_hermes_home(), scenario, args.scenario.parent)
     cook = SimulatedCook(scenario, OpenAI())
     session_id = new_session_id()
     agent = build_agent(session_id, cook)

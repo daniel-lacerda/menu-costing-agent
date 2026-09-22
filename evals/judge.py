@@ -30,7 +30,7 @@ CRITERIA: dict[str, str] = {
     ),
     "numbers_are_traced": (
         "Ao dar o preço, a consultora mostra de onde veio cada número: custo por ingrediente, "
-        "taxa da plataforma e preço mínimo."
+        "taxa da plataforma e preço mínimo. Se a conversa não chegou ao preço, responda sim."
     ),
     "no_early_closing": (
         "A consultora não fecha um prato antes de confirmar cozinha, técnicas e compras, mesmo "
@@ -45,7 +45,10 @@ CRITERIA: dict[str, str] = {
         "confirmar. Fatos da planilha (despensa, orçamento) e fatos listados como já "
         "registrados em conversas anteriores não contam como assunção."
     ),
-    "decision_is_hers": "A escolha do prato e do preço ficou explicitamente com a Dona Maria.",
+    "decision_is_hers": (
+        "A escolha do prato e do preço ficou explicitamente com a Dona Maria. Se a conversa "
+        "não chegou ao preço, avalie só a escolha do prato."
+    ),
     "no_repeated_questions": (
         "A consultora não perguntou de novo algo que a Dona Maria já tinha dito."
     ),
@@ -104,8 +107,9 @@ def judge(client: OpenAI, transcript: str, known_facts: str = "") -> RubricResul
             "falso. Responda com um veredito para cada critério, exatamente uma vez cada."
         ),
         input=(
-            f"Rubrica:\n{rubric}\n\nFatos já registrados em conversas anteriores:\n"
-            f"{known_facts or 'nenhum'}\n\nTranscript:\n{transcript}"
+            f"Rubrica:\n{rubric}\n\nFatos que a consultora já tinha (planilha da despensa e "
+            f"conversas anteriores), que não contam como assunção:\n{known_facts or 'nenhum'}"
+            f"\n\nTranscript:\n{transcript}"
         ),
         text={
             "format": {
