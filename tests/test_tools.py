@@ -121,6 +121,82 @@ def test_accepted_dish_is_priced_and_the_budget_is_committed(tools: dict[str, To
     assert priced["chosen_price_brl"] == 9.9
 
 
+def test_a_price_below_the_floor_is_refused_and_nothing_is_recorded(
+    tools: dict[str, Tool],
+) -> None:
+    call(tools, "kitchen_profile", KITCHEN)
+    call(tools, "recipe_register", RECIPE)
+    call(
+        tools,
+        "recipe_update",
+        {
+            "recipe_id": "r1",
+            "liked": True,
+            "techniques": {"refogar": True},
+            "purchases": [{**PURCHASE, "confirmed_by_cook": True}],
+            "accepted": True,
+        },
+    )
+    refused = call(tools, "dish_price", {"recipe_id": "r1", "chosen_price_brl": 1.0})
+    assert "abaixo do preço mínimo" in refused["error"]
+    assert call(tools, "dish_price", {"recipe_id": "r1"})["chosen_price_brl"] is None
+
+
+def test_re_registering_an_accepted_dish_keeps_the_acceptance_and_the_price(
+    tools: dict[str, Tool],
+) -> None:
+    call(tools, "kitchen_profile", KITCHEN)
+    call(tools, "recipe_register", RECIPE)
+    call(
+        tools,
+        "recipe_update",
+        {
+            "recipe_id": "r1",
+            "liked": True,
+            "techniques": {"refogar": True},
+            "purchases": [{**PURCHASE, "confirmed_by_cook": True}],
+            "accepted": True,
+        },
+    )
+    call(tools, "dish_price", {"recipe_id": "r1", "chosen_price_brl": 9.9})
+    again = call(tools, "recipe_register", RECIPE)
+    assert again["gate"]["ready"] is True
+    assert call(tools, "dish_price", {"recipe_id": "r1"})["chosen_price_brl"] == 9.9
+    changed = {**RECIPE, "yield_portions": 8}
+    assert "já foi aceito" in call(tools, "recipe_register", changed)["error"]
+
+
+def test_the_budget_is_shared_by_every_accepted_dish(tools: dict[str, Tool]) -> None:
+    call(tools, "kitchen_profile", KITCHEN)
+    first = {**PURCHASE, "price_brl": 50.0, "confirmed_by_cook": True}
+    call(tools, "recipe_register", RECIPE)
+    call(
+        tools,
+        "recipe_update",
+        {
+            "recipe_id": "r1",
+            "liked": True,
+            "techniques": {"refogar": True},
+            "purchases": [first],
+            "accepted": True,
+        },
+    )
+    call(tools, "recipe_register", {**RECIPE, "url": "https://example.org/outro"})
+    second = {**PURCHASE, "price_brl": 35.0, "confirmed_by_cook": True}
+    result = call(
+        tools,
+        "recipe_update",
+        {"recipe_id": "r2", "liked": True, "purchases": [second], "accepted": True},
+    )
+    assert "orçamento restante é R$ 30.00" in result["error"]
+
+
+def test_the_kitchen_carries_the_time_it_was_last_updated(tools: dict[str, Tool]) -> None:
+    assert "updated_at" not in call(tools, "kitchen_profile", {})["profile"]
+    written = call(tools, "kitchen_profile", {"burners": 4})["profile"]["updated_at"]
+    assert call(tools, "kitchen_profile", {})["profile"]["updated_at"] == written
+
+
 def test_the_menu_and_the_kitchen_outlive_the_session(tools: dict[str, Tool]) -> None:
     call(tools, "kitchen_profile", KITCHEN, session="monday")
     call(tools, "recipe_register", RECIPE, session="monday")

@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, model_validator
 
-from .units import BaseUnit
+from .units import BaseUnit, fold
 
 # ---------------------------------------------------------------------------
 # Pantry
@@ -38,13 +38,6 @@ class PantryItem(BaseModel):
     def unit_cost_display(self) -> str:
         scale, label = {"g": (1000, "kg"), "ml": (1000, "L"), "un": (1, "un")}[self.base_unit]
         return f"R$ {self.unit_cost_brl * scale:.2f}/{label}"
-
-    @computed_field(  # type: ignore[prop-decorator]
-        description="Verdadeiro quando o item é contado e o tamanho da embalagem é desconhecido"
-    )
-    @property
-    def package_size_unknown(self) -> bool:
-        return self.base_unit == "un"
 
 
 class PantryAmendment(BaseModel):
@@ -101,21 +94,29 @@ class KitchenProfile(BaseModel):
     )
     notes: str | None = Field(default=None, description="Outras limitações ditas por ela")
 
-    REQUIRED: ClassVar[frozenset[str]] = frozenset(
-        {
-            "burners",
-            "oven",
-            "pressure_cooker",
-            "air_fryer",
-            "blender",
-            "fuel",
-            "fridge_space",
-            "time_per_batch",
-        }
+    # Asked on the first visit because they shape which recipes to propose.
+    ELICITED: ClassVar[tuple[str, ...]] = (
+        "burners",
+        "oven",
+        "pressure_cooker",
+        "air_fryer",
+        "blender",
+        "fuel",
+        "fridge_space",
+        "time_per_batch",
     )
+    # Block every dish when unknown. Equipment is checked per recipe, so a stove dish does not
+    # wait for an answer about the air fryer.
+    REQUIRED: ClassVar[frozenset[str]] = frozenset({"burners", "time_per_batch"})
 
     def missing(self) -> list[str]:
-        return sorted(name for name in self.REQUIRED if getattr(self, name) is None)
+        return [name for name in self.ELICITED if getattr(self, name) is None]
+
+    def missing_required(self) -> list[str]:
+        return [name for name in self.missing() if name in self.REQUIRED]
+
+    def mastered(self) -> list[str]:
+        return sorted(name for name, ok in self.techniques.items() if ok)
 
     def has(self, equipment: Equipment) -> bool | None:
         if equipment == "fogao":
@@ -155,7 +156,8 @@ class RecipeInput(BaseModel):
     yield_portions: int = Field(gt=0, description="Porções que a receita rende")
     ingredients: list[IngredientInput] = Field(min_length=1)
     equipment_required: list[Equipment] = Field(
-        min_length=1, description="Equipamentos que o preparo usa; fogao no mínimo"
+        default_factory=list,
+        description="Equipamentos que o preparo usa; vazio só para pratos sem cocção",
     )
     burners_needed: int = Field(default=1, ge=0, description="Bocas usadas ao mesmo tempo")
     techniques_required: list[str] = Field(
@@ -168,10 +170,21 @@ class RecipeInput(BaseModel):
     per_portion_items: list[IngredientInput] = Field(
         default_factory=list,
         description=(
-            "O que entra em cada porção vendida além do preparo da página: acompanhamentos e "
-            "embalagem, em quantidade por porção. A tool multiplica pelo rendimento."
+            "O que entra em cada porção vendida além do preparo da página: acompanhamentos, "
+            "em quantidade por porção. A tool multiplica pelo rendimento."
         ),
     )
+
+    @model_validator(mode="after")
+    def _names_are_unique(self) -> RecipeInput:
+        """Purchases and blockers refer to ingredients by name, so a name must mean one line."""
+        seen: set[str] = set()
+        for ingredient in [*self.ingredients, *self.per_portion_items]:
+            key = fold(ingredient.name)
+            if key in seen:
+                raise ValueError(f"ingrediente repetido: {ingredient.name!r}")
+            seen.add(key)
+        return self
 
 
 class PurchaseInput(BaseModel):

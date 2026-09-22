@@ -18,13 +18,20 @@ from .domain.models import (
     KitchenProfile,
     Menu,
     PantryAmendment,
+    PantryItem,
     PurchaseInput,
     Recipe,
     RecipeInput,
 )
 from .domain.pantry import find_item, load_pantry
 from .domain.pricing import cost_breakdown, pricing
-from .domain.recipes import check_ingredients, evaluate_gate, plan_purchases, recipe_id
+from .domain.recipes import (
+    carry_purchases,
+    check_ingredients,
+    evaluate_gate,
+    plan_purchases,
+    recipe_id,
+)
 from .domain.units import ConversionTable
 
 TOOLSET = "menu_costing"
@@ -113,18 +120,14 @@ class ConsultationTools:
     # -- kitchen --------------------------------------------------------------
 
     def kitchen_profile(self, args: KitchenProfile, **kwargs: Any) -> dict[str, Any]:
-        current = self.store.load_kitchen()
+        current = self._kitchen()
         patch = args.model_dump(exclude_unset=True)
         if "techniques" in patch:
             patch["techniques"] = {**current.techniques, **patch["techniques"]}
-        updated = current.model_copy(update=patch)
+        profile: KitchenProfile = current.model_copy(update=patch)
         if patch:
-            self.store.save_kitchen(updated)
-        return {
-            "profile": updated,
-            "missing": updated.missing(),
-            "last_updated": self.store.kitchen_updated_at(),
-        }
+            profile = self.store.save_kitchen(profile)
+        return {"profile": profile, "missing": profile.missing()}
 
     # -- recipes --------------------------------------------------------------
 
@@ -133,16 +136,23 @@ class ConsultationTools:
         checks = check_ingredients(args, self._pantry(), self.table)
         rid = recipe_id(menu.recipes, args.url)
         previous = menu.recipes.get(rid)
-        recipe = Recipe(
-            id=rid,
-            session_id=_session_id(kwargs),
-            liked=previous.liked if previous else None,
-            purchases=previous.purchases if previous else [],
-            **args.model_dump(),
-        )
+        if previous is None:
+            recipe = Recipe(id=rid, session_id=_session_id(kwargs), **args.model_dump())
+        elif previous.accepted and _recipe_input(previous) != args:
+            raise DomainError(
+                f"{rid} já foi aceito com outra composição e compromete o orçamento. Para mudar "
+                "a receita, desfaça o aceite com recipe_update (accepted falso) e registre de novo."
+            )
+        else:
+            # What she said about the dish survives a re-registration; the package counts are
+            # sized again because the quantities may have changed.
+            recipe = previous.model_copy(
+                update={name: getattr(args, name) for name in RecipeInput.model_fields}
+            )
+            recipe.purchases = carry_purchases(previous.purchases, checks, self.table)
         menu.recipes[rid] = recipe
         self.store.save_menu(menu)
-        gate = evaluate_gate(recipe, self.store.load_kitchen(), checks, self.table)
+        gate = evaluate_gate(recipe, self._kitchen(), checks, self.table)
         return {"recipe_id": rid, "ingredients": checks, "gate": gate}
 
     def recipe_update(self, args: RecipeUpdateArgs, **kwargs: Any) -> dict[str, Any]:
@@ -151,7 +161,7 @@ class ConsultationTools:
         if args.liked is not None:
             recipe.liked = args.liked
         if args.techniques:
-            profile = self.store.load_kitchen()
+            profile = self._kitchen()
             self.store.save_kitchen(
                 profile.model_copy(update={"techniques": {**profile.techniques, **args.techniques}})
             )
@@ -164,7 +174,7 @@ class ConsultationTools:
                     + ", ".join(unconfirmed)
                 )
             recipe.purchases = plan_purchases(args.purchases, checks, self.table)
-        gate = evaluate_gate(recipe, self.store.load_kitchen(), checks, self.table)
+        gate = evaluate_gate(recipe, self._kitchen(), checks, self.table)
         if args.accepted is not None:
             if args.accepted and not gate.ready:
                 raise DomainError(
@@ -193,7 +203,7 @@ class ConsultationTools:
         recipe = _recipe(menu, args.recipe_id)
         checks = check_ingredients(recipe, self._pantry(), self.table)
         if not recipe.accepted:
-            gate = evaluate_gate(recipe, self.store.load_kitchen(), checks, self.table)
+            gate = evaluate_gate(recipe, self._kitchen(), checks, self.table)
             pending = "; ".join(b.message for b in gate.blockers) or "falta ela aceitar o prato"
             raise DomainError(f"O prato ainda não foi aceito: {pending}.")
         cost = cost_breakdown(recipe, checks, self._pantry(), self.table)
@@ -217,15 +227,22 @@ class ConsultationTools:
 
     # -- helpers --------------------------------------------------------------
 
-    def _pantry(self) -> list[Any]:
+    def _pantry(self) -> list[PantryItem]:
         return load_pantry(self.settings.pantry_path, self.store.load_amendments())
 
     def _menu(self) -> Menu:
         return self.store.load_menu(self.settings.budget_brl)
 
+    def _kitchen(self) -> KitchenProfile:
+        return self.store.load_kitchen() or KitchenProfile()
+
 
 def _session_id(kwargs: dict[str, Any]) -> str:
     return str(kwargs.get("session_id") or "default")
+
+
+def _recipe_input(recipe: Recipe) -> RecipeInput:
+    return RecipeInput.model_validate(recipe.model_dump(include=set(RecipeInput.model_fields)))
 
 
 def _recipe(menu: Menu, rid: str) -> Recipe:
@@ -259,13 +276,13 @@ _DESCRIPTIONS: dict[str, str] = {
     ),
     "kitchen_profile": (
         "Lê ou atualiza o perfil da cozinha: equipamentos, técnicas que ela domina e limitações. "
-        "Chame sem argumentos para ler. Devolve os campos obrigatórios ainda desconhecidos; "
-        "pergunte-os antes de avançar."
+        "Chame sem argumentos para ler. Devolve em missing o que ainda não se sabe da cozinha e "
+        "em updated_at quando ela falou dela pela última vez."
     ),
     "recipe_register": (
         "Registra uma receita candidata extraída de uma página real e a compara com a despensa e a "
         "cozinha. Devolve o que ela já tem, o que falta comprar e os bloqueios para aceitação. "
-        "Registrar de novo a mesma URL atualiza a receita."
+        "Registrar de novo a mesma URL atualiza a receita e mantém o que ela já disse sobre ela."
     ),
     "recipe_update": (
         "Atualiza uma receita com o que a cozinheira disse: se gostou, técnicas confirmadas, "

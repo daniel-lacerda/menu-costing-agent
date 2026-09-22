@@ -13,6 +13,15 @@ from .models import KitchenProfile, Menu, PantryAmendment
 _AMENDMENTS = TypeAdapter(list[PantryAmendment])
 
 
+class StoredKitchen(KitchenProfile):
+    """The profile as saved: the timestamp is the fact the consultant recaps on a return visit.
+
+    File modification time would not do: copying or restoring the file would change it.
+    """
+
+    updated_at: datetime
+
+
 class Store:
     """Everything here outlives sessions: one cook, one kitchen, one pantry, one launch menu."""
 
@@ -31,18 +40,17 @@ class Store:
     def menu_path(self) -> Path:
         return self.root / "menu.json"
 
-    def load_kitchen(self) -> KitchenProfile:
-        if not self.kitchen_path.exists():
-            return KitchenProfile()
-        return KitchenProfile.model_validate_json(self.kitchen_path.read_text("utf-8"))
-
-    def save_kitchen(self, profile: KitchenProfile) -> None:
-        _write(self.kitchen_path, profile)
-
-    def kitchen_updated_at(self) -> datetime | None:
+    def load_kitchen(self) -> StoredKitchen | None:
         if not self.kitchen_path.exists():
             return None
-        return datetime.fromtimestamp(self.kitchen_path.stat().st_mtime, tz=UTC)
+        return StoredKitchen.model_validate_json(self.kitchen_path.read_text("utf-8"))
+
+    def save_kitchen(self, profile: KitchenProfile) -> StoredKitchen:
+        stored = StoredKitchen(
+            **profile.model_dump(exclude={"updated_at"}), updated_at=datetime.now(UTC)
+        )
+        _write(self.kitchen_path, stored)
+        return stored
 
     def load_amendments(self) -> list[PantryAmendment]:
         if not self.amendments_path.exists():

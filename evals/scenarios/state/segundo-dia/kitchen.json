@@ -10,6 +10,11 @@
   "fuel": "gas",
   "fridge_space": "medio",
   "time_per_batch": "mais_de_2h",
-  "techniques": {"cozinhar na pressão": true, "desfiar carne": true, "refogar": true},
-  "notes": null
+  "techniques": {
+    "cozinhar na pressão": true,
+    "desfiar carne": true,
+    "refogar": true
+  },
+  "notes": null,
+  "updated_at": "2026-09-21T20:15:00Z"
 }

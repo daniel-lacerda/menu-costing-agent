@@ -32,11 +32,6 @@ def test_unit_cost_and_stock_are_expressed_in_base_units(
     assert item.stock_base == stock_base
 
 
-def test_only_counted_items_have_unknown_package_size(pantry: list[PantryItem]) -> None:
-    unknown = {item.name for item in pantry if item.package_size_unknown}
-    assert unknown == {"Ovos", "Cobertura de chocolate"}
-
-
 def test_an_amendment_from_the_cook_turns_a_counted_item_into_grams(pantry_path: Path) -> None:
     amendment = PantryAmendment(
         name="cobertura de chocolate", package_size=1000, package_unit="g", stated_by_cook=True

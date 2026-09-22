@@ -105,9 +105,26 @@ def plan_purchases(
         check = next((c for c in checks if fold(c.name) == fold(purchase.ingredient)), None)
         if check is None:
             raise DomainError(f"{purchase.ingredient!r} não é um ingrediente desta receita.")
-        packages = max(1, math.ceil(check.shortfall / package_in(purchase, check, table)))
+        if check.shortfall == 0:
+            raise DomainError(
+                f"Não falta {purchase.ingredient!r} para um lote; não há o que comprar."
+            )
+        packages = math.ceil(check.shortfall / package_in(purchase, check, table))
         planned.append(Purchase(**purchase.model_dump(), packages=packages))
     return planned
+
+
+def carry_purchases(
+    previous: list[Purchase], checks: list[IngredientCheck], table: ConversionTable
+) -> list[Purchase]:
+    """Keep confirmed packages that the re-registered recipe still needs, sized for it again."""
+    still_short = {fold(c.name) for c in checks if c.shortfall > 0}
+    kept = [
+        PurchaseInput(**p.model_dump(exclude={"packages", "total_brl"}))
+        for p in previous
+        if fold(p.ingredient) in still_short
+    ]
+    return plan_purchases(kept, checks, table)
 
 
 def evaluate_gate(
@@ -116,7 +133,7 @@ def evaluate_gate(
     """Everything the statement requires before the cook commits to a dish."""
     blockers: list[Blocker] = []
 
-    for field in profile.missing():
+    for field in profile.missing_required():
         blockers.append(Blocker(code=f"kitchen_unknown:{field}", message=f"Falta saber: {field}."))
 
     if recipe.liked is None:
@@ -148,13 +165,17 @@ def evaluate_gate(
         )
 
     known = {fold(name): mastered for name, mastered in profile.techniques.items()}
+    on_file = ", ".join(profile.mastered()) or "nenhuma"
     for technique in recipe.techniques_required:
         mastered = known.get(fold(technique))
         if mastered is None:
             blockers.append(
                 Blocker(
                     code=f"technique_unknown:{technique}",
-                    message=f"Falta saber se ela domina: {technique}.",
+                    message=(
+                        f"Falta saber se ela domina: {technique}. "
+                        f"Técnicas já confirmadas por ela: {on_file}."
+                    ),
                 )
             )
         elif not mastered:
