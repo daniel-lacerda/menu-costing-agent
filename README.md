@@ -47,7 +47,9 @@ A conversa não é linear, mas cada etapa do enunciado tem um procedimento (uma 
 | 2.3 Ingredientes e compras | `kitchen-constraints` | `recipe_register`, `recipe_update`, `pantry_inventory`, `pantry_amend` |
 | 2.4 Aceitação, CMV e preço | `menu-costing` | `recipe_update`, `dish_price` |
 
-O ponto central do enunciado, "não pode deixar ela comprar ingredientes e descobrir depois que não consegue cozinhar", é um *gate* em código, não uma instrução de prompt. `recipe_register` devolve a lista de bloqueios de uma receita (campo da cozinha desconhecido, equipamento que ela não tem, técnica não confirmada, ingrediente sem compra confirmada). `recipe_update` só grava a aceitação quando essa lista está vazia e as compras cabem no orçamento. `dish_price` recusa qualquer prato não aceito. A consultora conduz a conversa; a garantia não depende dela.
+O ponto central do enunciado, "não pode deixar ela comprar ingredientes e descobrir depois que não consegue cozinhar", é um *gate* em código, não uma instrução de prompt. `recipe_register` devolve a lista de bloqueios de uma receita: bocas do fogão ou tempo por cozinhada desconhecidos, equipamento que a receita usa e ela não tem ou ainda não disse se tem, técnica que ela não confirmou com essas palavras, ingrediente que falta sem compra confirmada. `recipe_update` só grava a aceitação quando essa lista está vazia e as compras cabem no orçamento. `dish_price` recusa qualquer prato não aceito. A consultora conduz a conversa; a garantia não depende dela.
+
+O resto da cozinha (forno, panela de pressão, air fryer, liquidificador, gás ou elétrico, espaço na geladeira) é perguntado na primeira conversa porque orienta que receitas propor, mas só bloqueia um prato que o exige. Uma receita de fogão não espera a resposta sobre a air fryer, e uma cozinheira que não sabe responder algo segue adiante.
 
 O que se vende no delivery é a porção montada. Quando a página descreve só o preparo principal, a consultora pergunta como a Dona Maria monta a marmita e registra os acompanhamentos da despensa por porção (`per_portion_items`); a tool multiplica pelo rendimento da receita.
 
@@ -67,7 +69,7 @@ As seis tools:
 
 1. `pantry_inventory` lê a planilha, cruza as duas abas por nome, converte cada item para unidade base (g, ml ou un) e devolve estoque e custo unitário derivado (`preço total pago ÷ quantidade comprada`), com a linha de origem.
 2. `pantry_amend` registra um fato que a planilha não tem e a cozinheira informou: tamanho da embalagem de um item contado em unidades, ou correção de preço.
-3. `kitchen_profile` lê ou atualiza o perfil da cozinha e devolve os campos ainda desconhecidos e a data da última atualização.
+3. `kitchen_profile` lê ou atualiza o perfil da cozinha e devolve os campos ainda desconhecidos e quando ela falou da cozinha pela última vez.
 4. `recipe_register` registra uma receita extraída de uma página real, converte as medidas, compara com a despensa e a cozinha, e devolve o que ela tem, o que falta e os bloqueios.
 5. `recipe_update` grava o que ela disse: se gostou, técnicas confirmadas, compras confirmadas (como embalagens) e a aceitação.
 6. `dish_price` calcula o CMV por porção linha a linha, o preço mínimo e cenários por margem, e registra o preço escolhido.
@@ -84,7 +86,7 @@ As seis tools:
 
 **Tool Search desligado.** O Hermes esconde tools de plugin atrás de três tools de descoberta quando há tools diferíveis, um mecanismo pensado para catálogos com centenas de tools. Seis tools com 3,4 KB de schema ficam visíveis por inteiro (`tools.tool_search.enabled: "off"`). Com ele ligado, as skills que declaram `requires_tools` também sumiam do índice.
 
-**Toolset fechado.** `platform_toolsets.cli` é uma lista explícita: `web`, `clarify`, `skills`, `memory`, `session_search`. A toolset do plugin entra por ele estar habilitado. Terminal, arquivos, browser, execução de código, delegação e cron ficam fora. Escritas de skill pelo agente exigem aprovação humana (`skills.write_approval`), e a revisão automática pós-turno, que grava memória e skills sem pedir, está desligada.
+**Toolset fechado.** `platform_toolsets.cli` é uma lista explícita: `web`, `clarify`, `skills`, `memory`. A toolset do plugin entra por ele estar habilitado. A busca em sessões antigas (`session_search`) ficou de fora depois que a suíte a pegou em flagrante: a consultora encontrou a transcrição de outra consulta e deu um prato como fechado sem confirmar nada. Os fatos da consulta têm um lugar só, o ledger das tools, e o modelo não deve reconstruí-los a partir de conversas antigas. Terminal, arquivos, browser, execução de código, delegação e cron ficam fora. Escritas de skill pelo agente exigem aprovação humana (`skills.write_approval`), e a revisão automática pós-turno, que grava memória e skills sem pedir, está desligada.
 
 **Profile autoral.** `config.yaml` é escrito à mão, comentado, com `_config_version` fixado para o Hermes não migrar e reescrever o arquivo. O marcador `.no-bundled-skills` impede a semeadura das skills de fábrica; a única que entra mesmo assim é `hermes-agent`, o manual do próprio framework, que ele trata como essencial (`agent/skill_utils.py`).
 
@@ -96,8 +98,8 @@ As seis tools:
 
 | Pergunta | Resposta | Evidência |
 |---|---|---|
-| De onde vem cada número do preço? | De `dish_price`, linha a linha, com a linha da planilha ou a compra que originou o custo. O modelo explica; não calcula. | Resultado da tool na sessão; testes em `tests/test_pricing.py` |
-| O que impede aceitar um prato cedo demais? | O gate em `recipe_update`, que recusa aceitação com bloqueios abertos ou compras acima do orçamento. | `tests/test_tools.py`, `tests/test_recipes.py` |
+| De onde vem cada número do preço? | De `dish_price`, linha a linha, com a linha da planilha ou a compra que originou o custo. O modelo explica; não calcula. | Resultado da tool na sessão; testes em `tests/test_pricing.py`; verificação `prices_told_match_tool`, que exige que o piso e cada cenário ditos à Dona Maria sejam os que a tool devolveu naquele turno |
+| O que impede aceitar um prato cedo demais? | O gate em `recipe_update`, que recusa aceitação com bloqueios abertos ou compras acima do orçamento. Um prato aceito não muda de composição sem desfazer o aceite. | `tests/test_tools.py`, `tests/test_recipes.py` |
 | Onde está a trilha da conversa? | No banco de sessões do Hermes (`state.db`), com cada turno, tool call, argumento e resultado; exportável com `hermes sessions export`. | `hermes sessions export --format md --session-id <id>` |
 | E o tracing? | Langfuse, opcional: um trace por turno, uma geração por chamada de modelo, um span por tool call, agrupados pelo id de sessão do Hermes, com tokens e custo. | Plugin bundled `observability/langfuse` |
 | O que o agente pode fazer? | Só o toolset acima. Sem terminal, arquivos, browser ou código. | `profile/config.yaml` |
@@ -110,10 +112,10 @@ Limitações conhecidas do tracing: o plugin bundled do Hermes fala a API do SDK
 
 Quatro camadas, da mais barata à mais cara:
 
-1. **Testes de unidade** (`tests/`, 61 testes): os oito formatos de unidade da planilha, a derivação do custo unitário como o enunciado define, as conversões e suas recusas, cada condição do gate nomeando seu bloqueio, as fórmulas de preço, as recusas do contrato das tools, e o guarda de escopo. Nenhum teste de getter.
+1. **Testes de unidade** (`tests/`, 69 testes): os oito formatos de unidade da planilha, a derivação do custo unitário como o enunciado define, as conversões e suas recusas, cada condição do gate nomeando seu bloqueio, as fórmulas de preço, as recusas do contrato das tools (preço abaixo do piso, compra do que não falta, aceite com bloqueio, orçamento partilhado entre pratos, re-registro de prato aceito), e o guarda de escopo. Nenhum teste de getter.
 2. **Cenários simulados** (`evals/scenarios/`): uma Dona Maria interpretada por um modelo barato, com fatos escondidos que ela só revela se perguntada, rodada contra o agente real (mesmo runtime, tools, skills e banco de sessões do CLI). Três cenários: sem forno e sem saber selar carne; pedidos fora de escopo no meio da consulta; retorno no dia seguinte com o cardápio de ontem e uma mudança na cozinha.
-3. **Verificações determinísticas** (`evals/checks.py`): lidas do que as tools gravaram e do log, nunca da prosa do modelo. Aceite só depois de gostar e confirmar técnicas; preço só depois do aceite; preço escolhido acima do piso; receita registrada só de página extraída; turnos fora de escopo servidos pelo modelo barato; nenhuma pergunta de cozinha repetida no retorno.
-4. **Rubrica binária** (`evals/judge.py`): dez critérios de qualidade da conversa para uma pessoa simples, cada um respondido sim ou não por um juiz com a evidência do transcript; a nota é a soma. Critérios: no máximo três perguntas por mensagem, preço proposto em vez de perguntado, linguagem simples, link e rendimento em toda receita, números rastreados, nada fechado cedo, fora de escopo recusado em uma frase, nada assumido, decisão dela, nada perguntado duas vezes.
+3. **Verificações determinísticas** (`evals/checks.py`): lidas do que as tools gravaram, dos resultados que devolveram e do log. Aceite só depois de gostar e confirmar técnicas; preço só depois do aceite; preço escolhido acima do piso que a tool calculou; piso e cenários ditos à Dona Maria iguais aos da tool no mesmo turno (a única verificação que lê a prosa, justamente para compará-la com o dado); receita registrada só de página extraída; turnos fora de escopo servidos pelo modelo barato, e nenhum desvio quando o cenário não tem turno fora de escopo; nenhuma pergunta de cozinha repetida no retorno.
+4. **Rubrica binária** (`evals/judge.py`): onze critérios de qualidade da conversa para uma pessoa simples, cada um respondido sim ou não por um juiz com a evidência do transcript; a nota é a fração. O juiz vê a conversa como a Dona Maria a viu e, entre as falas, as tool calls que a consultora fez, para distinguir fato confirmado de fato assumido. Critérios: no máximo três perguntas por mensagem, preço proposto em vez de perguntado, linguagem simples, link e rendimento em toda receita, números rastreados, nada fechado cedo, fora de escopo recusado em uma frase, nada assumido, decisão dela, nada perguntado duas vezes, fala de pessoa e não de sistema.
 
 Os scores das camadas 3 e 4 são anexados à sessão correspondente no Langfuse, para que trace e avaliação fiquem juntos.
 
@@ -121,7 +123,7 @@ Os scores das camadas 3 e 4 são anexados à sessão correspondente no Langfuse,
 ./scripts/evaluate.sh scenarios/sem-forno.yaml scenarios/fora-de-escopo.yaml scenarios/segundo-dia.yaml
 ```
 
-Cada rodada da suíte reseta o estado da consulta e a memória do Hermes antes de cada cenário, para que nada de uma Dona Maria simulada vaze para a próxima. A mesma suíte roda com outro modelo principal por argumento (`--model`), sem tocar no config.
+Cada rodada da suíte reseta o estado da consulta e a memória do Hermes antes de cada cenário, para que nada de uma Dona Maria simulada vaze para a próxima. Nenhum nome de modelo está escrito na suíte: o modelo principal, o barato (que serve os turnos fora de escopo e interpreta a Dona Maria) e o juiz vêm do `config.yaml` do profile, e cada um se troca por argumento (`--model`, `--cook-model`, `--judge-model`) sem tocar no config.
 
 Última rodada com o modelo entregue e a rodada de comparação com o modelo barato, um run por cenário:
 
@@ -154,9 +156,23 @@ O que a suíte encontrou nas rodadas anteriores, e que virou correção: receita
 5. Embalagem e entrega ficam fora do custo e do orçamento, porque o enunciado define os dois em termos de ingredientes. A consultora diz isso ao apresentar o preço.
 6. Medidas de receita (colher, xícara, dente, unidade de tomate) convertem por uma tabela versionada em `profile/plugins/menu_costing/data/conversions.yaml`, com densidades e pesos por peça aproximados e restritos aos 37 itens da despensa. Toda conversão aplicada é devolvida à cozinheira para conferência.
 7. Preços de complementos são estimativas da consultora confirmadas ou corrigidas pela Dona Maria; só o valor confirmado entra.
-8. Itens contados em unidades sem tamanho de embalagem na planilha (a cobertura de chocolate a R$ 79,90) não podem ser custeados em gramas até a Dona Maria informar o tamanho, que a consultora pergunta e registra com `pantry_amend`.
+8. Itens contados em unidades sem tamanho de embalagem na planilha (a cobertura de chocolate a R$ 79,90) não podem ser custeados em gramas: a conversão recusa, a consultora pergunta o tamanho e registra com `pantry_amend`. Ovos são contados e não precisam de tamanho.
 9. O estoque é verificado para um lote da receita; a operação contínua do delivery está fora do escopo.
 10. Uma cozinheira, uma cozinha, um cardápio: o estado não é multiusuário.
+11. Um preço abaixo do custo não é registrado. Ela decide entre preços a partir do piso; a tool recusa o resto e a consultora explica o motivo.
+12. As compras confirmadas de uma receita substituem a lista anterior a cada `recipe_update`, por desenho: a lista é a que ela confirmou por último, sem restos de uma tentativa anterior.
+
+## Limites conhecidos
+
+O que um leitor com tempo encontraria, dito antes:
+
+1. **Concorrência.** O estado é JSON com escrita atômica, sem lock. Duas conversas com a mesma cozinheira ao mesmo tempo poderiam perder uma escrita. O enunciado tem uma cozinheira; em produção, isso viraria um banco com transação por consulta.
+2. **Versão do estado.** `kitchen.json` e `menu.json` são validados pelos modelos Pydantic ao carregar, mas não carregam número de versão. Mudar um campo obrigatório exige migrar o arquivo à mão.
+3. **Amostra.** Um run por cenário e por modelo. A rubrica varia entre rodadas iguais; as verificações determinísticas não. O juiz é, por padrão, o mesmo modelo que conduz a conversa (`--judge-model` troca), o que tende a ser complacente com o próprio estilo.
+4. **Fidelidade da extração.** A verificação garante que toda receita registrada veio de uma página extraída, não que as quantidades registradas são as da página. Isso pediria um conjunto de páginas com gabarito.
+5. **Injeção por página.** A regra do `SOUL.md` e o scanner do Hermes cobrem o caso; não há cenário com uma página hostil na suíte.
+6. **Latência de pesquisa.** O turno de pesquisa leva até dois minutos, limitado pelo backend de busca. No dashboard as tool calls aparecem enquanto acontecem; no CLI, a consultora avisa que vai pesquisar e a espera fica sem sinal.
+7. **Orçamento e taxa são parâmetros do config**, não algo que a Dona Maria muda na conversa. O enunciado os fixa.
 
 ## O que ficou de fora
 

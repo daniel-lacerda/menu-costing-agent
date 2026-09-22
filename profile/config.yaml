@@ -26,7 +26,6 @@ platform_toolsets:
     - clarify
     - skills
     - memory
-    - session_search
 
 # Tool Search defers plugin tools behind discovery tools; it exists for catalogs with hundreds
 # of tools. Six tools stay visible in full.

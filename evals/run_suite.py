@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -142,12 +143,15 @@ def push_scores(report: RunReport) -> None:
         {"name": "metrics.cost_usd", "value": round(report.metrics.cost_usd, 4)},
     ]
     for score in scores:
-        response = requests.post(
-            f"{base}/api/public/scores",
-            auth=auth,
-            json={"sessionId": report.session_id, "dataType": "NUMERIC", **score},
-            timeout=30,
-        )
+        payload = {"sessionId": report.session_id, "dataType": "NUMERIC", **score}
+        for attempt in range(5):
+            response = requests.post(
+                f"{base}/api/public/scores", auth=auth, json=payload, timeout=30
+            )
+            if response.status_code != 429:
+                break
+            # Twenty-odd scores per run trip the rate limit; the header says how long to wait.
+            time.sleep(float(response.headers.get("Retry-After", 2 * (attempt + 1))))
         response.raise_for_status()
 
 

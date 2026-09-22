@@ -187,10 +187,10 @@ def chosen_price_above_floor(run: RunArtifacts) -> Check:
 def prices_told_match_tool(run: RunArtifacts, expected: bool) -> Check:
     """The prices she hears are the ones dish_price returned, verbatim.
 
-    A call that presents the pricing must be followed by a reply with the floor and every
-    scenario; a call that records her choice must be followed by a reply with that price. The
-    consultant explains numbers; it must not produce them. Reading the prose here is the point:
-    it is compared against the tool result of the same turn.
+    A turn that records her choice must answer with that price; a turn that only presents the
+    pricing must answer with the floor and every scenario. The consultant explains numbers; it
+    must not produce them. Reading the prose here is the point: it is compared against the
+    tool results of the same turn.
     """
     pricings = _pricings(run)
     if not pricings:
@@ -199,27 +199,31 @@ def prices_told_match_tool(run: RunArtifacts, expected: bool) -> Check:
             passed=not expected,
             evidence="dish_price never returned a pricing in this run",
         )
-    for call in pricings:
-        assert call.result is not None
-        told = run.consultant_text(call.turn)
-        chosen = call.arguments.get("chosen_price_brl")
-        if chosen is not None:
-            amounts = [float(chosen)]
+    for turn in sorted({c.turn for c in pricings}):
+        calls = [c for c in pricings if c.turn == turn]
+        chosen = [
+            c.arguments["chosen_price_brl"] for c in calls if "chosen_price_brl" in c.arguments
+        ]
+        if chosen:
+            amounts = [float(chosen[-1])]
         else:
-            amounts = [call.result["pricing"]["floor_price_brl"]] + [
-                s["price_brl"] for s in call.result["pricing"]["scenarios"]
+            last = calls[-1].result
+            assert last is not None
+            amounts = [last["pricing"]["floor_price_brl"]] + [
+                s["price_brl"] for s in last["pricing"]["scenarios"]
             ]
+        told = run.consultant_text(turn)
         absent = [a for a in amounts if not re.search(rf"R\$\s?{_brl(a)}", told)]
         if absent:
             return Check(
                 name="prices_told_match_tool",
                 passed=False,
-                evidence=f"turn {call.turn}: tool returned {absent} but the reply omits them",
+                evidence=f"turn {turn}: tool returned {absent} but the reply omits them",
             )
     return Check(
         name="prices_told_match_tool",
         passed=True,
-        evidence=f"{len(pricings)} pricing replies repeat the tool's numbers",
+        evidence=f"{len(pricings)} pricing calls answered with the tool's numbers",
     )
 
 

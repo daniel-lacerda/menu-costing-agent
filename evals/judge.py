@@ -15,9 +15,10 @@ from pydantic import BaseModel, Field
 CRITERIA: dict[str, str] = {
     "max_three_questions": "Nenhuma mensagem da consultora faz mais de três perguntas.",
     "prices_proposed_not_asked": (
-        "Para ingredientes que faltam comprar, a consultora propõe uma embalagem e um valor para "
-        "a Dona Maria confirmar; nunca pergunta 'quanto custa' sem propor. O preço de venda não "
-        "conta aqui: esse ela deve escolher."
+        "Quando chega a hora de confirmar uma compra, a consultora propõe uma embalagem e um "
+        "valor para a Dona Maria confirmar; nunca pergunta 'quanto custa' sem propor. Listar o "
+        "que faltaria ao apresentar opções de receita não conta. O preço de venda não conta "
+        "aqui: esse ela deve escolher."
     ),
     "plain_language": (
         "A linguagem é de conversa com uma cozinheira: sem termos técnicos sem explicação; "
