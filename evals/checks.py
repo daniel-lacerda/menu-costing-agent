@@ -1,8 +1,9 @@
 """Deterministic checks over a saved run: the guarantees the consultant must never break.
 
 Each check is a yes or no answer with the evidence that decided it, so a failed run explains
-itself. They read what the harness saved (turns.jsonl), what the tools persisted (menu.json)
-and what the runtime logged (agent.log), never the model's prose.
+itself. They read what the harness saved (turns.jsonl, including every tool result), what the
+tools persisted (menu.json) and what the runtime logged (agent.log). The one check that reads
+the consultant's prose does so to confirm the prose repeats the tool's numbers.
 """
 
 from __future__ import annotations
@@ -14,13 +15,18 @@ from typing import Any
 
 from pydantic import BaseModel
 
-TOOL_ORDER = ("recipe_register", "recipe_update", "dish_price")
-
 
 class Check(BaseModel):
     name: str
     passed: bool
     evidence: str
+
+
+class ToolCall(BaseModel):
+    turn: int
+    name: str
+    arguments: dict[str, Any]
+    result: dict[str, Any] | None
 
 
 class RunArtifacts(BaseModel):
@@ -49,32 +55,54 @@ class RunArtifacts(BaseModel):
         ]
         return cls(turns=turns, menu=menu, kitchen=kitchen, log_lines=lines, session_id=session_id)
 
-    def calls(self) -> list[tuple[int, str, dict[str, Any]]]:
-        """(turn, tool, arguments) for every tool call, in order."""
-        out: list[tuple[int, str, dict[str, Any]]] = []
+    def calls(self) -> list[ToolCall]:
+        out: list[ToolCall] = []
         for turn in self.turns:
             for call in turn["tool_calls"]:
-                raw = call.get("arguments") or "{}"
-                try:
-                    arguments = json.loads(raw)
-                except json.JSONDecodeError:
-                    arguments = {}
-                out.append((turn["turn"], call["name"], arguments))
+                out.append(
+                    ToolCall(
+                        turn=turn["turn"],
+                        name=call["name"],
+                        arguments=_json_or_empty(call.get("arguments")),
+                        result=_json_or_none(call.get("result")),
+                    )
+                )
         return out
+
+    def consultant_text(self, turn: int) -> str:
+        return next(t["consultant"] for t in self.turns if t["turn"] == turn)
+
+
+def _json_or_empty(raw: str | None) -> dict[str, Any]:
+    try:
+        parsed = json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _json_or_none(raw: str | None) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def accepted_only_after_confirmation(run: RunArtifacts) -> Check:
     """No recipe is accepted before she said she liked it and every technique was confirmed."""
     liked: set[str] = set()
     techniques_seen: set[str] = set()
-    for _, tool, args in run.calls():
-        if tool != "recipe_update":
+    for call in run.calls():
+        if call.name != "recipe_update":
             continue
-        rid = str(args.get("recipe_id"))
-        if args.get("liked") is True:
+        rid = str(call.arguments.get("recipe_id"))
+        if call.arguments.get("liked") is True:
             liked.add(rid)
-        techniques_seen.update((args.get("techniques") or {}).keys())
-        if args.get("accepted") is True and rid not in liked:
+        techniques_seen.update((call.arguments.get("techniques") or {}).keys())
+        if call.arguments.get("accepted") is True and rid not in liked:
             return Check(
                 name="accepted_only_after_confirmation",
                 passed=False,
@@ -105,13 +133,9 @@ def _confirmed(technique: str, run: RunArtifacts) -> bool:
     on_file = {k.casefold(): v for k, v in ((run.kitchen or {}).get("techniques") or {}).items()}
     if on_file.get(key):
         return True
-    for _, tool, args in run.calls():
-        if tool == "recipe_update":
-            for name, mastered in (args.get("techniques") or {}).items():
-                if name.casefold() == key and mastered:
-                    return True
-        if tool == "kitchen_profile":
-            for name, mastered in (args.get("techniques") or {}).items():
+    for call in run.calls():
+        if call.name in ("recipe_update", "kitchen_profile"):
+            for name, mastered in (call.arguments.get("techniques") or {}).items():
                 if name.casefold() == key and mastered:
                     return True
     return False
@@ -120,58 +144,97 @@ def _confirmed(technique: str, run: RunArtifacts) -> bool:
 def pricing_only_after_acceptance(run: RunArtifacts) -> Check:
     """dish_price is never called for a recipe before recipe_update accepted it."""
     accepted: set[str] = set()
-    for turn, tool, args in run.calls():
-        rid = str(args.get("recipe_id"))
-        if tool == "recipe_update" and args.get("accepted") is True:
+    for call in run.calls():
+        rid = str(call.arguments.get("recipe_id"))
+        if call.name == "recipe_update" and call.arguments.get("accepted") is True:
             accepted.add(rid)
-        if tool == "dish_price" and rid not in accepted:
+        if call.name == "dish_price" and rid not in accepted:
             return Check(
                 name="pricing_only_after_acceptance",
                 passed=False,
-                evidence=f"dish_price for {rid} in turn {turn} before acceptance",
+                evidence=f"dish_price for {rid} in turn {call.turn} before acceptance",
             )
     return Check(
         name="pricing_only_after_acceptance", passed=True, evidence=f"accepted {sorted(accepted)}"
     )
 
 
-def chosen_price_above_floor(run: RunArtifacts, platform_fee: float) -> Check:
-    """A recorded price never sits below CMV / (1 - fee); the tool must have refused otherwise."""
+def _pricings(run: RunArtifacts) -> list[ToolCall]:
+    return [c for c in run.calls() if c.name == "dish_price" and c.result and "pricing" in c.result]
+
+
+def chosen_price_above_floor(run: RunArtifacts) -> Check:
+    """A recorded price never sits below the floor the tool computed for that recipe."""
+    floors = {
+        str(c.arguments.get("recipe_id")): c.result["pricing"]["floor_price_brl"]
+        for c in _pricings(run)
+        if c.result
+    }
     if run.menu is None:
         return Check(name="chosen_price_above_floor", passed=True, evidence="no menu")
     for recipe in run.menu["recipes"].values():
         price = recipe.get("chosen_price_brl")
         if price is None:
             continue
-        floor = _floor_from_turns(run, recipe["id"])
-        if floor is not None and price < floor:
+        floor = floors.get(recipe["id"])
+        if floor is None or price < floor:
             return Check(
                 name="chosen_price_above_floor",
                 passed=False,
-                evidence=f"{recipe['id']} priced {price} below floor {floor}",
+                evidence=f"{recipe['id']} priced {price} with tool floor {floor}",
             )
     return Check(
-        name="chosen_price_above_floor", passed=True, evidence="all chosen prices above floor"
+        name="chosen_price_above_floor",
+        passed=True,
+        evidence=f"floors from dish_price: {floors}",
     )
 
 
-def _floor_from_turns(run: RunArtifacts, rid: str) -> float | None:
-    pattern = re.compile(r"m[íi]nimo[^\d]{0,40}R\$ ?(\d+[,.]\d{2})")
-    for turn in run.turns:
-        match = pattern.search(turn["consultant"])
-        if match:
-            return float(match.group(1).replace(",", "."))
-    return None
+def prices_told_match_tool(run: RunArtifacts, expected: bool) -> Check:
+    """The floor and every scenario price she hears are the ones dish_price returned, verbatim.
+
+    The consultant explains numbers; it must not produce them. Reading the prose here is the
+    point: it is compared against the tool result of the same turn.
+    """
+    pricings = _pricings(run)
+    if not pricings:
+        return Check(
+            name="prices_told_match_tool",
+            passed=not expected,
+            evidence="dish_price never returned a pricing in this run",
+        )
+    for call in pricings:
+        assert call.result is not None
+        told = run.consultant_text(call.turn)
+        amounts = [call.result["pricing"]["floor_price_brl"]] + [
+            s["price_brl"] for s in call.result["pricing"]["scenarios"]
+        ]
+        absent = [a for a in amounts if not re.search(rf"R\$\s?{_brl(a)}", told)]
+        if absent:
+            return Check(
+                name="prices_told_match_tool",
+                passed=False,
+                evidence=f"turn {call.turn}: tool returned {absent} but the reply omits them",
+            )
+    return Check(
+        name="prices_told_match_tool",
+        passed=True,
+        evidence=f"{len(pricings)} pricing replies repeat the tool's floor and scenarios",
+    )
+
+
+def _brl(amount: float) -> str:
+    return re.escape(f"{amount:.2f}".replace(".", ","))
 
 
 def recipes_come_from_extracted_pages(run: RunArtifacts) -> Check:
     """Every registered URL was fetched with web_extract before registration."""
     extracted: set[str] = set()
-    for _, tool, args in run.calls():
-        if tool == "web_extract":
-            extracted.update(args.get("urls") or [])
-        if tool == "recipe_register":
-            url = str(args.get("url"))
+    for call in run.calls():
+        if call.name == "web_extract":
+            extracted.update(call.arguments.get("urls") or [])
+        if call.name == "recipe_register":
+            url = str(call.arguments.get("url"))
             if url not in extracted:
                 return Check(
                     name="recipes_come_from_extracted_pages",
@@ -185,19 +248,18 @@ def recipes_come_from_extracted_pages(run: RunArtifacts) -> Check:
     )
 
 
-def off_topic_turns_rerouted(run: RunArtifacts, expected: int) -> Check:
-    """The guard rerouted the expected turns and the provider confirms which model served them."""
+def off_topic_turns_rerouted(run: RunArtifacts, expected: int, cheap_model: str) -> Check:
+    """Off-topic turns, and only those, were served by the cheap model the provider reports."""
     guard_lines = [line for line in run.log_lines if "scope guard: turn" in line]
     rerouted = [line for line in guard_lines if "rerouted" in line]
     served = [line for line in guard_lines if "served by" in line]
-    cheap = [line for line in served if "gpt-5.6-luna" in line]
-    passed = len(rerouted) >= expected and len(cheap) == len(rerouted)
+    cheap = [line for line in served if cheap_model in line]
+    count_ok = len(rerouted) >= expected if expected else not rerouted
     return Check(
         name="off_topic_turns_rerouted",
-        passed=passed,
+        passed=count_ok and len(cheap) == len(rerouted),
         evidence=(
-            f"rerouted={len(rerouted)} served_by_cheap_model={len(cheap)} "
-            f"expected_at_least={expected}"
+            f"rerouted={len(rerouted)} served_by_{cheap_model}={len(cheap)} expected={expected}"
         ),
     )
 
@@ -205,9 +267,9 @@ def off_topic_turns_rerouted(run: RunArtifacts, expected: int) -> Check:
 def no_kitchen_question_repeated(run: RunArtifacts, known_fields: set[str]) -> Check:
     """On a return visit, fields already on file are not written again from her answers."""
     rewritten: set[str] = set()
-    for _, tool, args in run.calls():
-        if tool == "kitchen_profile":
-            rewritten.update(k for k in args if k in known_fields and k != "techniques")
+    for call in run.calls():
+        if call.name == "kitchen_profile":
+            rewritten.update(k for k in call.arguments if k in known_fields and k != "techniques")
     return Check(
         name="no_kitchen_question_repeated",
         passed=not rewritten - {"oven"},

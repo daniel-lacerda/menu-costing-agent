@@ -12,8 +12,6 @@ from typing import Any
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
-JUDGE_MODEL = "gpt-5.6-terra"
-
 CRITERIA: dict[str, str] = {
     "max_three_questions": "Nenhuma mensagem da consultora faz mais de três perguntas.",
     "prices_proposed_not_asked": (
@@ -52,6 +50,10 @@ CRITERIA: dict[str, str] = {
     "no_repeated_questions": (
         "A consultora não perguntou de novo algo que a Dona Maria já tinha dito."
     ),
+    "talks_like_a_person": (
+        "A consultora fala como uma pessoa: não narra o que anotou, registrou ou fechou no "
+        "sistema, e usa listas só para contas e opções, não para conversar."
+    ),
 }
 
 
@@ -70,13 +72,32 @@ class RubricResult(BaseModel):
 
 
 def transcript_text(turns: list[dict[str, Any]], cook_transcript: list[dict[str, str]]) -> str:
-    lines: list[str] = []
+    """The conversation as the cook saw it, plus the tool calls behind each consultant reply.
+
+    The cook transcript carries the clarify exchanges that happen inside a turn; the turns carry
+    the tool calls. The judge needs both to tell a confirmed fact from an assumed one.
+    """
+    lines = [f"[dona maria] {turns[0]['cook']}"] if turns else []
+    replies = iter(turns)
     for entry in cook_transcript:
+        if entry["role"] == "consultora":
+            turn = next(replies)
+            calls = ", ".join(_call_summary(c) for c in turn["tool_calls"])
+            lines.append(f"[tools] {calls or 'nenhuma'}")
         lines.append(f"[{entry['role']}] {entry['content']}")
     return "\n\n".join(lines)
 
 
-def judge(client: OpenAI, transcript: str, known_facts: str = "") -> RubricResult:
+def _call_summary(call: dict[str, Any]) -> str:
+    try:
+        arguments = json.loads(call.get("arguments") or "{}")
+    except json.JSONDecodeError:
+        arguments = {}
+    keys = ", ".join(f"{k}={json.dumps(v, ensure_ascii=False)[:60]}" for k, v in arguments.items())
+    return f"{call['name']}({keys})"
+
+
+def judge(client: OpenAI, transcript: str, known_facts: str, model: str) -> RubricResult:
     schema = {
         "type": "object",
         "properties": {
@@ -99,12 +120,14 @@ def judge(client: OpenAI, transcript: str, known_facts: str = "") -> RubricResul
     }
     rubric = "\n".join(f"- {key}: {text}" for key, text in CRITERIA.items())
     response = client.responses.create(
-        model=JUDGE_MODEL,
+        model=model,
         instructions=(
             "Você avalia a conversa entre uma consultora de cardápio e a Dona Maria, uma "
             "cozinheira simples. Para cada critério da rubrica responda passed verdadeiro ou "
             "falso, com uma evidência curta tirada do transcript. Seja rigoroso: na dúvida, "
-            "falso. Responda com um veredito para cada critério, exatamente uma vez cada."
+            "falso. Responda com um veredito para cada critério, exatamente uma vez cada. As "
+            "linhas [tools] mostram o que a consultora registrou antes de responder; a Dona "
+            "Maria não as vê."
         ),
         input=(
             f"Rubrica:\n{rubric}\n\nFatos que a consultora já tinha (planilha da despensa e "

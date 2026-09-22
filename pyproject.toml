@@ -3,6 +3,7 @@ name = "menu-costing-agent"
 version = "0.1.0"
 description = "Hermes Agent profile: menu and pricing consultant for a home cook opening a delivery"
 requires-python = ">=3.11"
+license = "MIT"
 dependencies = [
     "openpyxl>=3.1,<4",
     "pydantic>=2.13,<3",

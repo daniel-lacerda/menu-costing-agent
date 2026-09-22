@@ -1,7 +1,7 @@
 """Run scenarios against the real agent, check the guarantees, judge the conversation, report.
 
 Usage (inside the Hermes environment, see scripts/evaluate.sh):
-    python evals/run_suite.py scenarios/*.yaml --repeat 2 [--model gpt-5.6-luna]
+    python evals/run_suite.py scenarios/*.yaml --repeat 2 [--model X] [--judge-model Y]
 """
 
 from __future__ import annotations
@@ -24,30 +24,33 @@ from checks import (
     chosen_price_above_floor,
     no_kitchen_question_repeated,
     off_topic_turns_rerouted,
+    prices_told_match_tool,
     pricing_only_after_acceptance,
     recipes_come_from_extracted_pages,
 )
+from converse import cheap_model
 from judge import RubricResult, judge, transcript_text
 from metrics import Metrics, collect
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
 EVALS = Path(__file__).resolve().parent
-KITCHEN_FIELDS = {
-    "burners",
-    "oven",
-    "pressure_cooker",
-    "air_fryer",
-    "blender",
-    "fuel",
-    "fridge_space",
-    "time_per_batch",
-}
+sys.path.insert(0, str(EVALS.parent / "profile" / "plugins"))
+from menu_costing.domain.models import KitchenProfile  # noqa: E402
+from menu_costing.domain.pantry import load_pantry  # noqa: E402
 
 
 class Expectations(BaseModel):
     off_topic_turns: int = 0
     returning: bool = False
+    priced: bool = Field(default=True, description="The consultation reaches a price")
+
+
+class Models(BaseModel):
+    main: str
+    cheap: str
+    judge: str
+    cook: str
 
 
 class RunReport(BaseModel):
@@ -65,20 +68,17 @@ class RunReport(BaseModel):
         return sum(c.passed for c in self.checks)
 
 
-def run_scenario(scenario: Path, model: str | None) -> Path:
+def run_scenario(scenario: Path, models: Models) -> Path:
     """Run one consultation and return its run directory."""
     command = [sys.executable, str(EVALS / "converse.py"), str(scenario)]
-    if model:
-        command += ["--model", model]
+    command += ["--model", models.main, "--cook-model", models.cook]
     completed = subprocess.run(command, check=True, capture_output=True, text=True)
     marker = "run saved under "
     line = next(line for line in completed.stdout.splitlines() if marker in line)
     return Path(line.split(marker, 1)[1].strip())
 
 
-def evaluate(
-    scenario: Path, run_dir: Path, home: Path, platform_fee: float, model: str
-) -> RunReport:
+def evaluate(scenario: Path, run_dir: Path, home: Path, models: Models) -> RunReport:
     expectations = Expectations.model_validate(
         (yaml.safe_load(scenario.read_text("utf-8")) or {}).get("expect") or {}
     )
@@ -86,18 +86,19 @@ def evaluate(
     checks = [
         accepted_only_after_confirmation(run),
         pricing_only_after_acceptance(run),
-        chosen_price_above_floor(run, platform_fee),
+        chosen_price_above_floor(run),
+        prices_told_match_tool(run, expectations.priced),
         recipes_come_from_extracted_pages(run),
-        off_topic_turns_rerouted(run, expectations.off_topic_turns),
+        off_topic_turns_rerouted(run, expectations.off_topic_turns, models.cheap),
     ]
     if expectations.returning:
-        checks.append(no_kitchen_question_repeated(run, KITCHEN_FIELDS))
+        checks.append(no_kitchen_question_repeated(run, set(KitchenProfile.ELICITED)))
     cook_transcript = json.loads((run_dir / "cook_transcript.json").read_text("utf-8"))
     known = known_facts(scenario, home / "data" / "despensa_dona_maria.xlsx")
-    rubric = judge(OpenAI(), transcript_text(run.turns, cook_transcript), known)
+    rubric = judge(OpenAI(), transcript_text(run.turns, cook_transcript), known, models.judge)
     report = RunReport(
         scenario=scenario.stem,
-        model=model,
+        model=models.main,
         run_dir=str(run_dir),
         session_id=run.session_id,
         checks=checks,
@@ -110,9 +111,6 @@ def evaluate(
 
 def known_facts(scenario: Path, pantry: Path) -> str:
     """What the consultant already had on file, so the judge does not call it an assumption."""
-    sys.path.insert(0, str(EVALS.parent / "profile" / "plugins"))
-    from menu_costing.domain.pantry import load_pantry
-
     items = ", ".join(item.name for item in load_pantry(pantry))
     facts = [f"Despensa (planilha): {items}."]
     state = (yaml.safe_load(scenario.read_text("utf-8")) or {}).get("state")
@@ -178,7 +176,9 @@ def main() -> int:
     parser.add_argument("scenarios", nargs="+", type=Path)
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--no-langfuse", action="store_true")
-    parser.add_argument("--model", help="Main model override for every run")
+    parser.add_argument("--model", help="Main model override; default is the profile's")
+    parser.add_argument("--judge-model", help="Rubric judge; default is the profile's main model")
+    parser.add_argument("--cook-model", help="Simulated cook; default is the profile's cheap model")
     args = parser.parse_args()
 
     from hermes_cli.config import load_config
@@ -188,22 +188,25 @@ def main() -> int:
     home = get_hermes_home()
     load_hermes_dotenv(hermes_home=home)
     config = load_config()
-    settings: dict[str, Any] = (
-        config.get("plugins", {}).get("entries", {}).get("menu_costing", {}).get("settings", {})
+    main_model = str(config["model"]["default"])
+    models = Models(
+        main=args.model or main_model,
+        cheap=cheap_model(config),
+        judge=args.judge_model or main_model,
+        cook=args.cook_model or cheap_model(config),
     )
-    platform_fee = float(settings.get("platform_fee", 0.10))
-    model = args.model or str(config["model"]["default"])
 
     reports: list[RunReport] = []
     for scenario in args.scenarios:
         for _ in range(args.repeat):
-            run_dir = run_scenario(scenario, args.model)
-            report = evaluate(scenario, run_dir, home, platform_fee, model)
+            run_dir = run_scenario(scenario, models)
+            report = evaluate(scenario, run_dir, home, models)
             if not args.no_langfuse:
                 push_scores(report)
             reports.append(report)
             print(
-                f"{report.scenario} ({model}): checks {report.checks_passed}/{len(report.checks)}, "
+                f"{report.scenario} ({models.main}): "
+                f"checks {report.checks_passed}/{len(report.checks)}, "
                 f"rubric {report.rubric.score:.0%}, max {report.metrics.turn_seconds_max}s, "
                 f"cost {report.metrics.cost_usd:.2f} USD",
                 flush=True,

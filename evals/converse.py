@@ -14,14 +14,13 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import yaml
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
 END_MARK = "[FIM]"
-COOK_MODEL = "gpt-5.6-luna"
 
 
 class Scenario(BaseModel):
@@ -39,9 +38,10 @@ class Scenario(BaseModel):
 class SimulatedCook:
     """Answers both chat turns and clarify prompts from the scenario, never from the consultant."""
 
-    def __init__(self, scenario: Scenario, client: OpenAI) -> None:
+    def __init__(self, scenario: Scenario, client: OpenAI, model: str) -> None:
         self.scenario = scenario
         self.client = client
+        self.model = model
         self.transcript: list[dict[str, str]] = []
 
     def _instructions(self) -> str:
@@ -78,9 +78,15 @@ class SimulatedCook:
 
     def _ask(self, prompt: str) -> str:
         response = self.client.responses.create(
-            model=COOK_MODEL, instructions=self._instructions(), input=prompt
+            model=self.model, instructions=self._instructions(), input=prompt
         )
         return response.output_text.strip()
+
+
+def cheap_model(config: dict[str, Any]) -> str:
+    """The small model the profile already routes off-topic turns to."""
+    settings = config["plugins"]["entries"]["menu_costing"]["settings"]
+    return str(settings["scope_model"])
 
 
 def build_agent(session_id: str, cook: SimulatedCook, model: str | None = None) -> Any:
@@ -125,12 +131,52 @@ def reset_store(home: Path, scenario: Scenario, scenario_dir: Path) -> None:
 
 
 def tool_calls_in(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each call with the result the tool returned, so checks can compare prose with data."""
+    results = {
+        message.get("tool_call_id"): message.get("content")
+        for message in messages
+        if message.get("role") == "tool"
+    }
     calls: list[dict[str, Any]] = []
     for message in messages:
         for call in message.get("tool_calls") or []:
             function = call.get("function") or {}
-            calls.append({"name": function.get("name"), "arguments": function.get("arguments")})
+            calls.append(
+                {
+                    "name": function.get("name"),
+                    "arguments": function.get("arguments"),
+                    "result": results.get(call.get("id")),
+                }
+            )
     return calls
+
+
+def exchange(
+    agent: Any, turn: int, message: str, history: list[dict[str, Any]] | None, log: TextIO
+) -> tuple[str, list[dict[str, Any]]]:
+    """One cook message through the agent; returns its answer and the grown history."""
+    print(f"\n[{turn}] dona maria: {message}", flush=True)
+    started = time.monotonic()
+    result = agent.run_conversation(user_message=message, conversation_history=history)
+    seconds = round(time.monotonic() - started, 1)
+    seen = len(history or [])
+    grown: list[dict[str, Any]] = result["messages"]
+    calls = tool_calls_in(grown[seen:])
+    answer: str = result["final_response"]
+    for call in calls:
+        print(f"    tool: {call['name']}", flush=True)
+    print(f"[{turn}] consultora: {answer}", flush=True)
+    record = {
+        "turn": turn,
+        "cook": message,
+        "tool_calls": calls,
+        "consultant": answer,
+        "seconds": seconds,
+        "at": datetime.now(UTC).isoformat(),
+    }
+    log.write(json.dumps(record, ensure_ascii=False) + "\n")
+    log.flush()
+    return answer, grown
 
 
 def main() -> int:
@@ -139,8 +185,13 @@ def main() -> int:
     parser.add_argument(
         "--model", help="Main model override; the provider stays the configured one"
     )
+    parser.add_argument(
+        "--cook-model",
+        help="Model that plays Dona Maria; defaults to the profile's cheap model (scope_model)",
+    )
     args = parser.parse_args()
 
+    from hermes_cli.config import load_config
     from hermes_cli.env_loader import load_hermes_dotenv
     from hermes_constants import get_hermes_home
     from hermes_state_ids import new_session_id
@@ -148,69 +199,25 @@ def main() -> int:
     load_hermes_dotenv(hermes_home=get_hermes_home())
     scenario = Scenario.model_validate(yaml.safe_load(args.scenario.read_text("utf-8")))
     reset_store(get_hermes_home(), scenario, args.scenario.parent)
-    cook = SimulatedCook(scenario, OpenAI())
+    cook_model = args.cook_model or cheap_model(load_config())
+    cook = SimulatedCook(scenario, OpenAI(), cook_model)
     session_id = new_session_id()
     agent = build_agent(session_id, cook, args.model)
 
     run_dir = Path(__file__).parent / "runs" / f"{scenario.name}-{session_id}"
     run_dir.mkdir(parents=True)
-    log = (run_dir / "turns.jsonl").open("w", encoding="utf-8")
-
-    history: list[dict[str, Any]] | None = None
-    message = scenario.opening
-    for turn in range(1, scenario.max_turns + 1):
-        print(f"\n[{turn}] dona maria: {message}", flush=True)
-        started = time.monotonic()
-        result = agent.run_conversation(user_message=message, conversation_history=history)
-        seconds = round(time.monotonic() - started, 1)
-        seen = len(history or [])
-        history = result["messages"]
-        calls = tool_calls_in(history[seen:])
-        answer = result["final_response"]
-        for call in calls:
-            print(f"    tool: {call['name']}", flush=True)
-        print(f"[{turn}] consultora: {answer}", flush=True)
-        log.write(
-            json.dumps(
-                {
-                    "turn": turn,
-                    "cook": message,
-                    "tool_calls": calls,
-                    "consultant": answer,
-                    "seconds": seconds,
-                    "at": datetime.now(UTC).isoformat(),
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-        log.flush()
-        message = cook.reply(answer)
-        if END_MARK in message:
-            message = message.replace(END_MARK, "").strip()
-            print(f"\n[{turn + 1}] dona maria: {message}", flush=True)
-            started = time.monotonic()
-            result = agent.run_conversation(user_message=message, conversation_history=history)
-            seconds = round(time.monotonic() - started, 1)
-            calls = tool_calls_in(result["messages"][len(history) :])
-            for call in calls:
-                print(f"    tool: {call['name']}", flush=True)
-            print(f"[{turn + 1}] consultora: {result['final_response']}", flush=True)
-            log.write(
-                json.dumps(
-                    {
-                        "turn": turn + 1,
-                        "cook": message,
-                        "tool_calls": calls,
-                        "consultant": result["final_response"],
-                        "seconds": seconds,
-                        "at": datetime.now(UTC).isoformat(),
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-            break
+    with (run_dir / "turns.jsonl").open("w", encoding="utf-8") as log:
+        history: list[dict[str, Any]] | None = None
+        message = scenario.opening
+        for turn in range(1, scenario.max_turns + 1):
+            answer, history = exchange(agent, turn, message, history, log)
+            message = cook.reply(answer)
+            if END_MARK in message:
+                # The cook's goodbye still deserves an answer; a bare marker does not.
+                message = message.replace(END_MARK, "").strip()
+                if message:
+                    exchange(agent, turn + 1, message, history, log)
+                break
 
     (run_dir / "cook_transcript.json").write_text(
         json.dumps(cook.transcript, ensure_ascii=False, indent=2), encoding="utf-8"

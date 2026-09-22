@@ -12,10 +12,13 @@ if ! command -v hermes >/dev/null 2>&1; then
     export PATH="${HOME}/.local/bin:${PATH}"
 fi
 
-if [ -d "${HERMES_SRC}/.git" ]; then
-    git -C "${HERMES_SRC}" fetch -q origin
-    git -C "${HERMES_SRC}" checkout -q "${HERMES_COMMIT}"
+# The official installer clones the repository; without the checkout there is nothing to pin.
+if [ ! -d "${HERMES_SRC}/.git" ]; then
+    echo "${HERMES_SRC} is not a git checkout; cannot pin Hermes to ${HERMES_COMMIT}" >&2
+    exit 1
 fi
+git -C "${HERMES_SRC}" fetch -q origin
+git -C "${HERMES_SRC}" checkout -q "${HERMES_COMMIT}"
 
 hermes profile install "${REPO_DIR}/profile" --name sabor-da-maria --alias --yes
 HERMES_HOME="${HOME}/.hermes/profiles/sabor-da-maria" hermes plugins enable menu_costing
