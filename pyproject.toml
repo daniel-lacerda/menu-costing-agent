@@ -17,12 +17,20 @@ dev = [
     "mypy>=1.11",
     "types-PyYAML",
     "types-openpyxl",
+    "types-requests",
+]
+# The evaluation suite runs inside the Hermes environment (scripts/evaluate.sh); these are the
+# same packages it needs there, declared so the suite's own tests and type checks run here.
+evals = [
+    "anthropic>=1,<2",
+    "openai>=2,<3",
+    "requests>=2,<3",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # The importable code is the Hermes plugin, which lives where Hermes loads it from.
-pythonpath = ["profile/plugins"]
+pythonpath = ["profile/plugins", "evals"]
 
 [tool.ruff]
 line-length = 100
@@ -36,11 +44,11 @@ ignore = ["ANN401"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-mypy_path = "profile/plugins"
-packages = ["menu_costing"]
+mypy_path = "profile/plugins:evals"
+files = ["profile/plugins/menu_costing", "evals"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-# Provided by the Hermes runtime; only imported inside register().
-module = ["hermes_constants", "hermes_cli.*"]
+# Provided by the Hermes runtime; imported inside the functions that need them.
+module = ["hermes_constants", "hermes_cli.*", "hermes_state_registry", "hermes_state_ids", "run_agent"]
 ignore_missing_imports = true

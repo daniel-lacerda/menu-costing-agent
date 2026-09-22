@@ -91,7 +91,7 @@ def transcript_text(turns: list[dict[str, Any]], cook_transcript: list[dict[str,
     The cook transcript carries the clarify exchanges that happen inside a turn; the turns carry
     the tool calls. The judge needs both to tell a confirmed fact from an assumed one.
     """
-    lines = [f"[dona maria] {turns[0]['cook']}"] if turns else []
+    lines: list[str] = []
     replies = iter(turns)
     for entry in cook_transcript:
         if entry["role"] == "consultora":

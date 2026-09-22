@@ -42,7 +42,7 @@ class SimulatedCook:
         self.scenario = scenario
         self.client = client
         self.model = model
-        self.transcript: list[dict[str, str]] = []
+        self.transcript = [{"role": "dona maria", "content": scenario.opening}]
 
     def _instructions(self) -> str:
         return (
@@ -198,9 +198,13 @@ def main() -> int:
     from hermes_constants import get_hermes_home
     from hermes_state_ids import new_session_id
 
-    load_hermes_dotenv(hermes_home=get_hermes_home())
+    home = get_hermes_home()
+    if home.resolve().is_relative_to(Path.home() / ".hermes"):
+        # The run wipes consultations and memories; that must never be a cook's real profile.
+        sys.exit(f"HERMES_HOME={home} is an installed profile; point it at a working copy")
+    load_hermes_dotenv(hermes_home=home)
     scenario = Scenario.model_validate(yaml.safe_load(args.scenario.read_text("utf-8")))
-    reset_store(get_hermes_home(), scenario, args.scenario.parent)
+    reset_store(home, scenario, args.scenario.parent)
     cook_model = args.cook_model or cheap_model(load_config())
     cook = SimulatedCook(scenario, OpenAI(), cook_model)
     session_id = new_session_id()
@@ -208,6 +212,18 @@ def main() -> int:
 
     run_dir = Path(__file__).parent / "runs" / f"{scenario.name}-{session_id}"
     run_dir.mkdir(parents=True)
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "scenario": scenario.name,
+                "session_id": session_id,
+                "model": args.model,
+                "cook_model": cook_model,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     with (run_dir / "turns.jsonl").open("w", encoding="utf-8") as log:
         history: list[dict[str, Any]] | None = None
         message = scenario.opening
@@ -223,7 +239,8 @@ def main() -> int:
                 # The cook's goodbye still deserves an answer; a bare marker does not.
                 message = message.replace(END_MARK, "").strip()
                 if message:
-                    exchange(agent, turn + 1, message, history, log)
+                    answer, history = exchange(agent, turn + 1, message, history, log)
+                    cook.transcript.append({"role": "consultora", "content": answer})
                 break
 
     (run_dir / "cook_transcript.json").write_text(

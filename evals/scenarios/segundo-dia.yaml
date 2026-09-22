@@ -13,9 +13,9 @@ facts: |
   carne. Uma coisa mudou desde ontem: o seu filho consertou o forno, agora você tem forno.
   Marmita: 150 g de arroz e 100 g de feijão por porção, mais o preparo do dia.
   Preços por embalagem que você aceita quando a consultora propõe algo parecido: creme de
-  leite R$ 3,50 a caixinha de 200 g; molho de tomate R$ 4,00 a caixa de 340 g; leite de coco
+  leite R$ 3,80 a caixinha de 200 g; molho de tomate R$ 4,00 a caixa de 340 g; leite de coco
   R$ 6,00 a garrafa de 200 ml; milho em lata R$ 4,50 a lata de 170 g; caldo de galinha
-  R$ 3,00 a caixa com 6 tabletes; colorau R$ 2,50 o pacote de 100 g. Para outros itens,
+  R$ 3,20 a caixa com 6 tabletes; colorau R$ 2,50 o pacote de 100 g. Para outros itens,
   aceite a proposta da consultora se parecer razoável.
 behaviour: |
   1. Se a consultora perguntar de novo coisas da sua cozinha que você já contou ontem, responda

@@ -21,10 +21,10 @@ facts: |
   comprou sem olhar o preço. Alcaparras foi presente da cunhada.
   Marmita: ela monta cada porção com 150 g de arroz e 100 g de feijão, mais o preparo do dia.
   Preços que você pagaria em compras complementares, sempre pela embalagem inteira: creme de
-  leite R$ 3,50 a caixinha de 200 g; molho de tomate R$ 4,00 a caixa de 340 g; leite de coco
+  leite R$ 3,80 a caixinha de 200 g; molho de tomate R$ 4,00 a caixa de 340 g; leite de coco
   R$ 6,00 a garrafa de 200 ml; cenoura R$ 5,00 o quilo; requeijão R$ 9,00 o pote de 200 g;
   milho em lata R$ 4,50 a lata de 170 g; vinagre R$ 4,00 a garrafa de 750 ml; caldo de galinha
-  R$ 3,00 a caixa com 6 tabletes; colorau R$ 2,50 o pacote de 100 g. Para qualquer outro item,
+  R$ 3,20 a caixa com 6 tabletes; colorau R$ 2,50 o pacote de 100 g. Para qualquer outro item,
   invente um preço plausível de mercado brasileiro, sempre por embalagem.
 behaviour: |
   1. Na primeira vez que a consultora apresentar receitas, escolha a que mais parece prato feito

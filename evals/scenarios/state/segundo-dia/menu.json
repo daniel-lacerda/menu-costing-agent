@@ -14,7 +14,7 @@
         {"name": "alho", "quantity": 2, "unit": "dentes", "pantry_item": "Alho"},
         {"name": "sal", "quantity": 5, "unit": "g", "pantry_item": "Sal"}
       ],
-      "equipment_required": ["fogao", "panela_de_pressao"],
+      "equipment_required": ["panela de pressão"],
       "burners_needed": 1,
       "techniques_required": ["refogar", "cozinhar na pressão"],
       "per_portion_items": [

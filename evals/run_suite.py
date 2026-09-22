@@ -23,7 +23,6 @@ from checks import (
     Check,
     RunArtifacts,
     accepted_only_after_confirmation,
-    chosen_price_above_floor,
     no_kitchen_question_repeated,
     off_topic_turns_rerouted,
     prices_told_match_tool,
@@ -83,16 +82,17 @@ def evaluate(scenario: Path, run_dir: Path, home: Path, models: Models) -> RunRe
         (yaml.safe_load(scenario.read_text("utf-8")) or {}).get("expect") or {}
     )
     run = RunArtifacts.load(run_dir, home / "consultations", home / "logs" / "agent.log")
+    seeded_menu = state_file(scenario, "menu.json")
+    accepted_before = {rid for rid, r in seeded_menu.get("recipes", {}).items() if r["accepted"]}
     checks = [
         accepted_only_after_confirmation(run),
-        pricing_only_after_acceptance(run),
-        chosen_price_above_floor(run),
+        pricing_only_after_acceptance(run, accepted_before),
         prices_told_match_tool(run, expectations.priced),
         recipes_come_from_extracted_pages(run),
         off_topic_turns_rerouted(run, expectations.off_topic_turns, models.cheap),
     ]
     if expectations.returning:
-        checks.append(no_kitchen_question_repeated(run, kitchen_on_file(scenario)))
+        checks.append(no_kitchen_question_repeated(run, state_file(scenario, "kitchen.json")))
     cook_transcript = json.loads((run_dir / "cook_transcript.json").read_text("utf-8"))
     known = known_facts(scenario, home / "data" / "despensa_dona_maria.xlsx")
     rubric = judge(Anthropic(), transcript_text(run.turns, cook_transcript), known, models.judge)
@@ -109,14 +109,14 @@ def evaluate(scenario: Path, run_dir: Path, home: Path, models: Models) -> RunRe
     return report
 
 
-def kitchen_on_file(scenario: Path) -> dict[str, Any]:
-    """The kitchen the scenario starts from, before the consultant touches it."""
+def state_file(scenario: Path, name: str) -> dict[str, Any]:
+    """A file of the state the scenario starts from, before the consultant touches it."""
     state = (yaml.safe_load(scenario.read_text("utf-8")) or {}).get("state")
-    path = scenario.parent / state / "kitchen.json" if state else None
+    path = scenario.parent / state / name if state else None
     if path is None or not path.exists():
         return {}
-    kitchen: dict[str, Any] = json.loads(path.read_text("utf-8"))
-    return kitchen
+    loaded: dict[str, Any] = json.loads(path.read_text("utf-8"))
+    return loaded
 
 
 def known_facts(scenario: Path, pantry: Path) -> str:

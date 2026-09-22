@@ -21,5 +21,5 @@ behaviour: |
   5. Depois disso, escolha qualquer receita que ela indicar e escreva exatamente [FIM] no final
      da sua mensagem seguinte.
 expect:
-  off_topic_turns: 1
+  off_topic_turns: 2
   priced: false

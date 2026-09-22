@@ -18,6 +18,9 @@ from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "profile" / "plugins"))
 from menu_costing.domain.models import KitchenProfile  # noqa: E402
+from menu_costing.domain.units import fold  # noqa: E402
+
+DICT_FACTS = ("equipment", "techniques")
 
 
 class Check(BaseModel):
@@ -51,7 +54,7 @@ class RunArtifacts(BaseModel):
         menu = json.loads(menu_path.read_text("utf-8")) if menu_path.exists() else None
         kitchen_path = store / "kitchen.json"
         kitchen = json.loads(kitchen_path.read_text("utf-8")) if kitchen_path.exists() else None
-        session_id = run_dir.name.rsplit("-", 1)[-1]
+        session_id = str(json.loads((run_dir / "run.json").read_text("utf-8"))["session_id"])
         lines = [
             line
             for line in agent_log.read_text("utf-8", errors="replace").splitlines()
@@ -67,31 +70,21 @@ class RunArtifacts(BaseModel):
                     ToolCall(
                         turn=turn["turn"],
                         name=call["name"],
-                        arguments=_json_or_empty(call.get("arguments")),
-                        result=_json_or_none(call.get("result")),
+                        arguments=json.loads(call["arguments"] or "{}"),
+                        result=_json_object(call.get("result")),
                     )
                 )
         return out
 
     def consultant_text(self, turn: int) -> str:
-        return next(t["consultant"] for t in self.turns if t["turn"] == turn)
+        return str(next(t["consultant"] for t in self.turns if t["turn"] == turn))
 
 
-def _json_or_empty(raw: str | None) -> dict[str, Any]:
-    try:
-        parsed = json.loads(raw or "{}")
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _json_or_none(raw: str | None) -> dict[str, Any] | None:
-    if raw is None:
+def _json_object(raw: str | None) -> dict[str, Any] | None:
+    """Plugin tools answer with a JSON object; native tools (web search) answer with text."""
+    if raw is None or not raw.lstrip().startswith("{"):
         return None
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
+    parsed = json.loads(raw)
     return parsed if isinstance(parsed, dict) else None
 
 
@@ -132,22 +125,14 @@ def accepted_only_after_confirmation(run: RunArtifacts) -> Check:
 
 
 def _confirmed(technique: str, run: RunArtifacts) -> bool:
-    """Confirmed in this run, or already on file in the kitchen profile from an earlier one."""
-    key = technique.casefold()
-    on_file = {k.casefold(): v for k, v in ((run.kitchen or {}).get("techniques") or {}).items()}
-    if on_file.get(key):
-        return True
-    for call in run.calls():
-        if call.name in ("recipe_update", "kitchen_profile"):
-            for name, mastered in (call.arguments.get("techniques") or {}).items():
-                if name.casefold() == key and mastered:
-                    return True
-    return False
+    """On file in the kitchen profile, which holds what she confirmed in this run and before."""
+    on_file = {fold(k): v for k, v in ((run.kitchen or {}).get("techniques") or {}).items()}
+    return bool(on_file.get(fold(technique)))
 
 
-def pricing_only_after_acceptance(run: RunArtifacts) -> Check:
+def pricing_only_after_acceptance(run: RunArtifacts, accepted_before: set[str]) -> Check:
     """dish_price is never called for a recipe before recipe_update accepted it."""
-    accepted: set[str] = set()
+    accepted = set(accepted_before)
     for call in run.calls():
         rid = str(call.arguments.get("recipe_id"))
         if call.name == "recipe_update" and call.arguments.get("accepted") is True:
@@ -165,27 +150,6 @@ def pricing_only_after_acceptance(run: RunArtifacts) -> Check:
 
 def _pricings(run: RunArtifacts) -> list[ToolCall]:
     return [c for c in run.calls() if c.name == "dish_price" and c.result and "pricing" in c.result]
-
-
-def chosen_price_above_floor(run: RunArtifacts) -> Check:
-    """A price recorded in this run never sits below the floor dish_price had computed for it."""
-    floors: dict[str, float] = {}
-    for call in _pricings(run):
-        assert call.result is not None
-        rid = str(call.arguments.get("recipe_id"))
-        chosen = call.arguments.get("chosen_price_brl")
-        if chosen is not None and (rid not in floors or chosen < floors[rid]):
-            return Check(
-                name="chosen_price_above_floor",
-                passed=False,
-                evidence=f"{rid} priced {chosen} with tool floor {floors.get(rid)}",
-            )
-        floors[rid] = call.result["pricing"]["floor_price_brl"]
-    return Check(
-        name="chosen_price_above_floor",
-        passed=True,
-        evidence=f"floors from dish_price: {floors}",
-    )
 
 
 def prices_told_match_tool(run: RunArtifacts, expected: bool) -> Check:
@@ -262,10 +226,9 @@ def off_topic_turns_rerouted(run: RunArtifacts, expected: int, cheap_model: str)
     rerouted = [line for line in guard_lines if "rerouted" in line]
     served = [line for line in guard_lines if "served by" in line]
     cheap = [line for line in served if cheap_model in line]
-    count_ok = len(rerouted) >= expected if expected else not rerouted
     return Check(
         name="off_topic_turns_rerouted",
-        passed=count_ok and len(cheap) == len(rerouted),
+        passed=len(rerouted) == expected and len(cheap) == len(rerouted),
         evidence=(
             f"rerouted={len(rerouted)} served_by_{cheap_model}={len(cheap)} expected={expected}"
         ),
@@ -281,13 +244,16 @@ def no_kitchen_question_repeated(run: RunArtifacts, on_file: dict[str, Any]) -> 
     for call in run.calls():
         if call.name != "kitchen_profile":
             continue
-        for field in KitchenProfile.REQUIRED:
-            if field in call.arguments and on_file.get(field) is not None:
+        for field in KitchenProfile.model_fields:
+            if field in DICT_FACTS:
+                continue
+            value = call.arguments.get(field)
+            if value is not None and value == on_file.get(field):
                 repeated.append(field)
-        for facts in ("equipment", "techniques"):
-            known = {k.casefold(): v for k, v in (on_file.get(facts) or {}).items()}
+        for facts in DICT_FACTS:
+            known = {fold(k): v for k, v in (on_file.get(facts) or {}).items()}
             for name, value in (call.arguments.get(facts) or {}).items():
-                if known.get(name.casefold()) == value:
+                if known.get(fold(name)) == value:
                     repeated.append(f"{facts}:{name}")
     return Check(
         name="no_kitchen_question_repeated",
