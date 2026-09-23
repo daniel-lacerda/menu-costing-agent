@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 from .domain.errors import DomainError
 from .domain.ledger import Store
 from .domain.models import (
+    Blocker,
     KitchenProfile,
     Menu,
     PantryAmendment,
@@ -185,9 +186,7 @@ class ConsultationTools:
         gate = evaluate_gate(recipe, self._kitchen(), checks)
         if args.accepted is not None:
             if args.accepted and not gate.ready:
-                raise DomainError(
-                    "O prato não pode ser aceito: " + "; ".join(b.message for b in gate.blockers)
-                )
+                raise DomainError("O prato não pode ser aceito: " + _joined(gate.blockers))
             purchases_brl = sum(p.total_brl for p in recipe.purchases)
             available = menu.remaining_brl() + (purchases_brl if recipe.accepted else 0.0)
             if args.accepted and purchases_brl > available:
@@ -215,8 +214,8 @@ class ConsultationTools:
         checks = check_ingredients(recipe, self._pantry(), self.table)
         if not recipe.accepted:
             gate = evaluate_gate(recipe, self._kitchen(), checks)
-            pending = "; ".join(b.message for b in gate.blockers) or "falta ela aceitar o prato"
-            raise DomainError(f"O prato ainda não foi aceito: {pending}.")
+            pending = _joined(gate.blockers) or "falta ela aceitar o prato."
+            raise DomainError(f"O prato ainda não foi aceito: {pending}")
         cost = cost_breakdown(recipe, checks, self._pantry(), self.table)
         margins = args.margins or self.settings.margins
         prices = pricing(cost.cmv_portion_brl, self.settings.platform_fee, margins)
@@ -251,6 +250,11 @@ class ConsultationTools:
 def _session_id(kwargs: dict[str, Any]) -> str:
     """Hermes passes the session id to every tool handler; a missing one is a wiring error."""
     return str(kwargs["session_id"])
+
+
+def _joined(blockers: list[Blocker]) -> str:
+    """Blocker messages as one sentence list, each already ending in a period."""
+    return " ".join(b.message for b in blockers)
 
 
 def _recipe_input(recipe: Recipe) -> RecipeInput:
