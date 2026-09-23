@@ -99,7 +99,8 @@ class ConsultationTools:
     # -- pantry ---------------------------------------------------------------
 
     def pantry_inventory(self, args: PantryInventoryArgs, **kwargs: Any) -> dict[str, Any]:
-        return {"items": self._pantry(), "budget": _budget(self._menu())}
+        items = self._pantry()
+        return {"count": len(items), "items": items, "budget": _budget(self._menu())}
 
     def pantry_amend(self, args: PantryAmendment, **kwargs: Any) -> dict[str, Any]:
         if not args.stated_by_cook:
