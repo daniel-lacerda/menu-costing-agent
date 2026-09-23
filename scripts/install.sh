@@ -45,4 +45,8 @@ cat <<MSG
 Profile installed. Fill in the keys and start:
   cp "${REPO_DIR}/profile/.env.example" "${HOME}/.hermes/profiles/sabor-da-maria/.env"
   sabor-da-maria chat
+
+Web interface (open the URL with the profile parameter, whatever the server prints):
+  hermes -p sabor-da-maria dashboard --isolated --no-open
+  http://127.0.0.1:9119/?profile=sabor-da-maria
 MSG
