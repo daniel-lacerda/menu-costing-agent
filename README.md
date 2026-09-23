@@ -3,7 +3,7 @@
 Consultora de cardápio e precificação para a Dona Maria, construída como um profile do [Hermes Agent](https://github.com/NousResearch/hermes-agent). O agente pesquisa receitas reais na internet, confirma que ela consegue produzi-las na cozinha que tem, compara os ingredientes com a despensa e calcula CMV e preço de venda com a taxa da plataforma. O enunciado está em `docs/desafio-senior-ai-engineer.md`.
 
 | Item | Valor |
-|---|---|
+| --- | --- |
 | Hermes Agent | v0.21.3, commit `6a627e6e`, sem alterações |
 | Modelo principal | `gpt-6-sol` (OpenAI, Responses API) |
 | Modelo auxiliar | `gpt-6-luna`: triagem de escopo, recusa fora de escopo, títulos, compressão |
@@ -40,7 +40,7 @@ O CLI imprime `Warning: Unknown toolsets: menu_costing` no início: o Hermes val
 Tudo que customiza o agente está em `profile/`, uma *profile distribution* do Hermes. São usados cinco primitivos do framework:
 
 | Primitivo | Uso | Onde |
-|---|---|---|
+| --- | --- | --- |
 | `SOUL.md` | Identidade, voz e sete regras | `profile/SOUL.md` |
 | Skills | Um procedimento por etapa, carregado sob demanda | `profile/skills/sabor-da-maria/` |
 | Plugin | Seis tools com Pydantic na fronteira e domínio puro por baixo | `profile/plugins/menu_costing/` |
@@ -52,7 +52,7 @@ O toolset nativo é uma lista fechada: `web`, `clarify`, `skills`, `memory`. Sem
 ### Tools
 
 | Tool | Função |
-|---|---|
+| --- | --- |
 | `pantry_inventory` | Lê a planilha, cruza as abas `Despensa` e `Precos` por nome, devolve estoque em unidade base (g, ml, un) e custo unitário (`preço total pago ÷ quantidade comprada`) com a linha de origem, mais o orçamento restante |
 | `pantry_amend` | Grava um fato da despensa informado pela cozinheira: tamanho de embalagem de um item contado, correção de preço |
 | `kitchen_profile` | Lê ou atualiza o perfil da cozinha: bocas do fogão, equipamentos, técnicas, tempo por cozinhada, restrições |
@@ -63,7 +63,7 @@ O toolset nativo é uma lista fechada: `web`, `clarify`, `skills`, `memory`. Sem
 ### Fluxo da consulta
 
 | Etapa do enunciado | Skill | Tools |
-|---|---|---|
+| --- | --- | --- |
 | 2.2 Elicitação de restrições | `kitchen-constraints` | `kitchen_profile`, `clarify` |
 | 2.1 Pesquisa de receitas | `recipe-research` | `web_search`, `web_extract`, `recipe_register` |
 | 2.3 Ingredientes e compras | `kitchen-constraints` | `recipe_register`, `recipe_update`, `pantry_inventory`, `pantry_amend` |
@@ -122,7 +122,7 @@ Os scores das camadas 3 e 4 são anexados à sessão no Langfuse. O custo é cal
 Rodada final, dois runs por cenário e por modelo:
 
 | Cenário | Modelo | Verificações | Rubrica | Turnos | s/turno p50 | s/turno máx | Cache | Custo (USD) |
-|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | sem-forno | gpt-6-sol | 5/5 | 11/11 | 4 | 42,9 | 132,0 | 95% | 0,34 |
 | sem-forno | gpt-6-sol | 5/5 | 11/11 | 5 | 10,4 | 78,3 | 95% | 0,36 |
 | fora-de-escopo | gpt-6-sol | 5/5 | 11/11 | 6 | 11,6 | 120,7 | 95% | 0,54 |
