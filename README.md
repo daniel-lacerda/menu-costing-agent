@@ -38,6 +38,8 @@ O CLI imprime `Warning: Unknown toolsets: menu_costing` no início: o Hermes val
 
 ## Arquitetura
 
+![Arquitetura e fluxo de uma consulta](docs/arquitetura.png)
+
 Tudo que customiza o agente está em `profile/`, uma *profile distribution* do Hermes. São usados cinco primitivos do framework:
 
 | Primitivo | Uso | Onde |
