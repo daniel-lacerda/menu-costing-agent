@@ -23,7 +23,7 @@ cp profile/.env.example ~/.hermes/profiles/sabor-da-maria/.env   # preencher as 
 sabor-da-maria chat
 ```
 
-`install.sh` instala o Hermes na versão fixada, instala `profile/` como o perfil `sabor-da-maria`, habilita o plugin (o que instala suas dependências no ambiente do Hermes) e instala os SDKs do Langfuse e da Anthropic.
+`install.sh` instala o Hermes na versão fixada, instala `profile/` como o perfil `sabor-da-maria` (ou o atualiza no lugar, preservando sessões, memória e `.env`), habilita o plugin (o que instala suas dependências no ambiente do Hermes) e instala os SDKs do Langfuse e da Anthropic.
 
 Interface web, com os cards de pergunta e as chamadas de tool visíveis:
 
@@ -62,10 +62,12 @@ O toolset nativo é uma lista fechada: `web`, `clarify`, `skills`, `memory`. Sem
 
 ### Fluxo da consulta
 
+A conversa não é linear; na prática a cozinha é perguntada antes da primeira receita.
+
 | Etapa do enunciado | Skill | Tools |
 | --- | --- | --- |
-| 2.2 Elicitação de restrições | `kitchen-constraints` | `kitchen_profile`, `clarify` |
 | 2.1 Pesquisa de receitas | `recipe-research` | `web_search`, `web_extract`, `recipe_register` |
+| 2.2 Elicitação de restrições | `kitchen-constraints` | `kitchen_profile`, `clarify` |
 | 2.3 Ingredientes e compras | `kitchen-constraints` | `recipe_register`, `recipe_update`, `pantry_inventory`, `pantry_amend` |
 | 2.4 Aceitação, CMV e preço | `menu-costing` | `recipe_update`, `dish_price` |
 

@@ -23,7 +23,13 @@ git -C "${HERMES_SRC}" checkout -q "${HERMES_COMMIT}"
 # commit may declare different ones.
 "${HOME}/.hermes/bin/uv" pip install --quiet --python "${HERMES_SRC}/venv/bin/python" -e "${HERMES_SRC}"
 
-hermes profile install "${REPO_DIR}/profile" --name sabor-da-maria --alias --yes
+# A second run updates the installed profile in place: distribution files and config are
+# replaced, while sessions, memories and .env are kept.
+if hermes profile list 2>/dev/null | grep -q "sabor-da-maria"; then
+    hermes profile update sabor-da-maria --force-config --yes
+else
+    hermes profile install "${REPO_DIR}/profile" --name sabor-da-maria --alias --yes
+fi
 # config.yaml already lists the plugin as enabled; this command is what installs its
 # dependencies (openpyxl, pydantic, pyyaml) into the Hermes environment.
 HERMES_HOME="${HOME}/.hermes/profiles/sabor-da-maria" hermes plugins enable menu_costing
