@@ -28,7 +28,7 @@ sabor-da-maria chat
 Interface web, com os cards de pergunta e as chamadas de tool visíveis:
 
 ```bash
-HERMES_HOME=~/.hermes/profiles/sabor-da-maria hermes dashboard --isolated --no-open   # http://127.0.0.1:9119
+hermes -p sabor-da-maria dashboard --isolated --no-open   # http://127.0.0.1:9119/?profile=sabor-da-maria
 ```
 
 Desenvolvimento: `HERMES_HOME=$PWD/profile hermes` usa a pasta do repositório diretamente, com um `profile/.env` próprio. O estado de runtime que o Hermes grava ali está no `.gitignore`. Os scripts da suíte usam esse `HERMES_HOME` por padrão, apagam a consulta e a memória antes de cada cenário e se recusam a rodar contra um perfil instalado em `~/.hermes`.
