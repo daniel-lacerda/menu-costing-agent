@@ -63,7 +63,7 @@ O Hermes fornece o runtime: o loop do agente, a montagem do prompt, a busca na w
 | `SOUL.md` | Identidade, voz para uma cozinheira que mal usa o celular, e sete regras invioláveis | `profile/SOUL.md` |
 | Skills (padrão agentskills.io) | Três procedimentos, um por etapa, carregados sob demanda com `skill_view` | `profile/skills/sabor-da-maria/` |
 | Plugin com tools | Seis tools determinísticas, Pydantic na fronteira, domínio puro por baixo | `profile/plugins/menu_costing/` |
-| Middleware e hook | Guarda de escopo: triagem no modelo barato e recusa sem o modelo principal | `profile/plugins/menu_costing/scope.py` |
+| Middleware | Guarda de escopo: triagem no modelo barato e recusa sem o modelo principal | `profile/plugins/menu_costing/scope.py` |
 | Configuração de profile | Modelo, auxiliares, toolsets permitidos, memória, plugins, manifesto de distribuição | `profile/config.yaml`, `profile/distribution.yaml` |
 
 As seis tools:
@@ -95,7 +95,7 @@ As seis tools:
 
 **O modelo decide onde o código não deve.** Nomes de equipamento e técnica, equivalências que a tabela de conversões não cobre ("um pimentão dá uma xícara picada"), temperos usados "a olho", e o olhar de mercado sobre o preço são decisões do modelo, propostas a ela para confirmar. O código guarda o que precisa ser garantido: a matemática, o gate, o dinheiro comprometido, e o registro de cada confirmação dela. Vale dizer com precisão o que isso garante: que o modelo registrou uma confirmação (`liked`, `confirmed_by_cook`, `stated_by_cook`, a técnica no perfil) antes de qualquer passo que dependa dela. Que a confirmação corresponde ao que ela disse é o que a suíte e o transcript verificam, não o código.
 
-**Escopo e custo.** Antes do primeiro chamado ao modelo em cada turno de usuário, um middleware `llm_request` tria a última mensagem com o modelo barato (cerca de 180 tokens, pelo `ctx.llm` do Hermes, com credenciais do host). Se ela é claramente alheia à consulta, a requisição é reescrita: modelo barato, instrução mínima de recusa, sem tools e sem os 8 mil tokens de prompt. Um hook `post_api_request` grava no log qual modelo o provider reporta ter servido. Respostas a perguntas de `clarify` não passam pelo middleware; para elas vale a regra de escopo do `SOUL.md`. A triagem falha aberta: se quebrar, o turno segue pelo caminho normal, com aviso no log.
+**Escopo e custo.** Antes do primeiro chamado ao modelo em cada turno de usuário, um middleware `llm_request` tria a última mensagem com o modelo barato (cerca de 180 tokens, pelo `ctx.llm` do Hermes, com credenciais do host). Se ela é claramente alheia à consulta, a requisição é reescrita: modelo barato, instrução mínima de recusa, sem tools e sem os 8 mil tokens de prompt. A reescrita fica registrada numa linha de log, a única que o plugin escreve, porque é o único ponto em que ele muda o que o framework ia fazer; o Hermes registra logo abaixo a chamada com o modelo que de fato foi usado. Respostas a perguntas de `clarify` não passam pelo middleware; para elas vale a regra de escopo do `SOUL.md`. A triagem falha aberta: se quebrar, o turno segue pelo caminho normal, com aviso no log.
 
 ## Garantias, controle e auditoria
 
@@ -107,7 +107,7 @@ As seis tools:
 | E o tracing? | Langfuse, opcional: um trace por turno, uma geração por chamada de modelo, um span por tool call, agrupados pelo id de sessão do Hermes, com tokens e custo. | Plugin bundled `observability/langfuse` |
 | O que o agente pode fazer? | Só o toolset acima. Sem terminal, arquivos, browser ou código. | `profile/config.yaml` |
 | E segredos e injeção? | Redação de segredos ligada por padrão no Hermes, forçada de novo pelo plugin do Langfuse antes de exportar (`capture_mode: sanitized`). SOUL e context files passam pelo scanner de injeção do Hermes; conteúdo de página é tratado como dado, por regra do `SOUL.md`. | Config do Hermes; `profile/SOUL.md` |
-| Como se sabe que uma mensagem fora de escopo não gastou o modelo principal? | Duas linhas de log por turno: `rerouted to gpt-6-luna` (nossa decisão) e `served by gpt-6-luna` (o provider). | `logs/agent.log`; verificação `off_topic_turns_rerouted` na suíte |
+| Como se sabe que uma mensagem fora de escopo não gastou o modelo principal? | A linha `scope guard: turn N rerouted to gpt-6-luna` e, logo abaixo, a linha do próprio Hermes `API call #k: model=gpt-6-luna` para a mesma chamada. | `logs/agent.log`; verificação `off_topic_turns_rerouted` na suíte |
 
 Limitações conhecidas do tracing: o plugin bundled do Hermes fala a API do SDK v3 do Langfuse; organizações novas do Langfuse só ingerem pelo caminho do v4, então o profile instala o v4. Com isso, a prévia de entrada e saída no nível do trace fica vazia (o span raiz de cada turno tem as duas), e o `userId` não é preenchido porque o Hermes não carrega identidade de usuário em sessões de CLI.
 

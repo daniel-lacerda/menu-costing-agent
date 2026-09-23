@@ -34,4 +34,3 @@ def register(ctx: PluginContext) -> None:
         model = str(ctx.get_config("scope_model"))
         guard = ScopeGuard(host_classifier(ctx, model), model)
         ctx.register_middleware("llm_request", guard)
-        ctx.register_hook("post_api_request", guard.on_post_api_request)

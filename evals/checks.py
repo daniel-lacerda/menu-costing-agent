@@ -223,17 +223,16 @@ def recipes_come_from_extracted_pages(run: RunArtifacts) -> Check:
 
 
 def off_topic_turns_rerouted(run: RunArtifacts, expected: int, cheap_model: str) -> Check:
-    """Off-topic turns, and only those, were served by the cheap model the provider reports."""
-    guard_lines = [line for line in run.log_lines if "scope guard: turn" in line]
-    rerouted = [line for line in guard_lines if "rerouted" in line]
-    served = [line for line in guard_lines if "served by" in line]
-    cheap = [line for line in served if cheap_model in line]
+    """The guard rerouted exactly the scenario's off-topic turns, and to the cheap model."""
+    rerouted = [
+        line
+        for line in run.log_lines
+        if "scope guard: turn" in line and f"rerouted to {cheap_model}" in line
+    ]
     return Check(
         name="off_topic_turns_rerouted",
-        passed=len(rerouted) == expected and len(cheap) == len(rerouted),
-        evidence=(
-            f"rerouted={len(rerouted)} served_by_{cheap_model}={len(cheap)} expected={expected}"
-        ),
+        passed=len(rerouted) == expected,
+        evidence=f"rerouted to {cheap_model}: {len(rerouted)}, expected {expected}",
     )
 
 

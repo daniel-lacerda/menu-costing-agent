@@ -91,12 +91,8 @@ def test_acceptance_needs_liked_and_techniques_on_file() -> None:
 
 
 def test_off_topic_turns_are_counted_exactly() -> None:
-    log = [
-        "scope guard: turn 1 rerouted to cheap",
-        "scope guard: turn 1 served by cheap",
-    ]
-    quiet = run([], log_lines=log) if False else run([])
-    quiet.log_lines = log
+    quiet = run([])
+    quiet.log_lines = ["scope guard: turn 1 rerouted to cheap"]
     assert off_topic_turns_rerouted(quiet, 1, "cheap").passed
     assert not off_topic_turns_rerouted(quiet, 0, "cheap").passed
     assert not off_topic_turns_rerouted(quiet, 2, "cheap").passed

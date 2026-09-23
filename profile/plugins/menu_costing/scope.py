@@ -79,7 +79,6 @@ class ScopeGuard:
     def __init__(self, classify: Classifier, refusal_model: str) -> None:
         self.classify = classify
         self.refusal_model = refusal_model
-        self.guarded_turns: set[str] = set()
 
     def __call__(self, request: dict[str, Any], **context: Any) -> dict[str, Any] | None:
         text = last_user_text(request)
@@ -93,22 +92,16 @@ class ScopeGuard:
             return None
         if not outside:
             return None
-        turn_id = str(context.get("turn_id") or "")
-        self.guarded_turns.add(turn_id)
-        logger.info("scope guard: turn %s rerouted to %s", turn_id, self.refusal_model)
+        # The one place this plugin changes what the framework was about to do, so the one
+        # place it writes a log line; the tools leave their trail in the session store.
+        logger.info(
+            "scope guard: turn %s rerouted to %s", context.get("turn_id") or "", self.refusal_model
+        )
         return {
             "request": refusal_request(request, self.refusal_model),
             "source": "menu_costing",
             "reason": "mensagem fora do escopo da consulta",
         }
-
-    def on_post_api_request(
-        self, turn_id: str = "", response_model: str | None = None, **_: Any
-    ) -> None:
-        """Audit closure: the provider, not this plugin, says which model served a guarded turn."""
-        if turn_id in self.guarded_turns:
-            self.guarded_turns.discard(turn_id)
-            logger.info("scope guard: turn %s served by %s", turn_id, response_model)
 
 
 TRIAGE_SCHEMA: dict[str, Any] = {
