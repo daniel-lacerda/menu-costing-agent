@@ -140,24 +140,28 @@ class ConsultationTools:
         checks = check_ingredients(args, self._pantry(), self.table)
         rid = recipe_id(menu.recipes, args.url)
         previous = menu.recipes.get(rid)
+        reopened = False
         if previous is None:
             recipe = Recipe(id=rid, session_id=_session_id(kwargs), **args.model_dump())
-        elif previous.accepted and _recipe_input(previous) != args:
-            raise DomainError(
-                f"{rid} já foi aceito com outra composição e compromete o orçamento. Para mudar "
-                "a receita, desfaça o aceite com recipe_update (accepted falso) e registre de novo."
-            )
         else:
             # What she said about the dish survives a re-registration; the package counts are
-            # sized again because the quantities may have changed.
+            # sized again because the quantities may have changed. A different composition
+            # reopens an acceptance, since the cost and the money committed changed with it.
             recipe = previous.model_copy(
                 update={name: getattr(args, name) for name in RecipeInput.model_fields}
             )
             recipe.purchases = carry_purchases(previous.purchases, checks, self.table)
+            reopened = previous.accepted and _recipe_input(previous) != args
+            if reopened:
+                recipe.accepted = False
+                recipe.chosen_price_brl = None
         menu.recipes[rid] = recipe
         self.store.save_menu(menu)
         gate = evaluate_gate(recipe, self._kitchen(), checks)
-        return {"recipe_id": rid, "ingredients": checks, "gate": gate}
+        result: dict[str, Any] = {"recipe_id": rid, "ingredients": checks, "gate": gate}
+        if reopened:
+            result["note"] = "A composição mudou; o aceite e o preço anteriores foram desfeitos."
+        return result
 
     def recipe_update(self, args: RecipeUpdateArgs, **kwargs: Any) -> dict[str, Any]:
         menu = self._menu()
@@ -291,7 +295,9 @@ _DESCRIPTIONS: dict[str, str] = {
     "recipe_register": (
         "Registra uma receita candidata extraída de uma página real e a compara com a despensa e a "
         "cozinha. Devolve o que ela já tem, o que falta comprar e os bloqueios para aceitação. "
-        "Registrar de novo a mesma URL atualiza a receita e mantém o que ela já disse sobre ela."
+        "Registrar de novo a mesma URL atualiza a receita e mantém o que ela já disse sobre ela; "
+        "se a composição de um prato aceito mudar, o aceite é desfeito e precisa ser confirmado "
+        "de novo."
     ),
     "recipe_update": (
         "Atualiza uma receita com o que a cozinheira disse: se gostou, compras complementares "

@@ -148,7 +148,7 @@ def test_a_price_below_the_floor_is_refused_and_nothing_is_recorded(
     assert call(tools, "dish_price", {"recipe_id": "r1"})["chosen_price_brl"] is None
 
 
-def test_re_registering_an_accepted_dish_keeps_the_acceptance_and_the_price(
+def test_re_registering_an_accepted_dish_keeps_or_reopens_the_acceptance(
     tools: dict[str, Tool],
 ) -> None:
     call(tools, "kitchen_profile", CONFIRMED_KITCHEN)
@@ -167,8 +167,9 @@ def test_re_registering_an_accepted_dish_keeps_the_acceptance_and_the_price(
     again = call(tools, "recipe_register", RECIPE)
     assert again["gate"]["ready"] is True
     assert call(tools, "dish_price", {"recipe_id": "r1"})["chosen_price_brl"] == 9.9
-    changed = {**RECIPE, "yield_portions": 8}
-    assert "já foi aceito" in call(tools, "recipe_register", changed)["error"]
+    changed = call(tools, "recipe_register", {**RECIPE, "yield_portions": 8})
+    assert "desfeitos" in changed["note"]
+    assert "não foi aceito" in call(tools, "dish_price", {"recipe_id": "r1"})["error"]
 
 
 def test_the_budget_is_shared_by_every_accepted_dish(tools: dict[str, Tool]) -> None:
