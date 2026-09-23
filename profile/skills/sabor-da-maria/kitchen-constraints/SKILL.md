@@ -23,7 +23,7 @@ O perfil da cozinha (kitchen_profile) guarda as três coisas que a consulta exig
 2. Técnicas e habilidades pelo nome em techniques (massa fresca, molho branco, ponto de carne, cozinhar na pressão, fritura por imersão).
 3. Restrições operacionais: o tempo por cozinhada em time_per_batch e o resto em notes (gás ou elétrico, espaço na geladeira, horários).
 
-O que bloqueia um prato é o que ele exige: bocas e tempo desconhecidos, e cada equipamento ou técnica da receita sem confirmação dela. O resto orienta a escolha das receitas, não trava.
+O que bloqueia um prato é o que ele exige: bocas desconhecidas, se a receita usa fogão, e cada equipamento ou técnica da receita sem confirmação dela. O resto, inclusive o tempo, orienta a escolha das receitas e é você quem pesa; não trava.
 
 ## Procedimento
 

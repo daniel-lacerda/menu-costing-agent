@@ -294,9 +294,10 @@ _DESCRIPTIONS: dict[str, str] = {
         "Registrar de novo a mesma URL atualiza a receita e mantém o que ela já disse sobre ela."
     ),
     "recipe_update": (
-        "Atualiza uma receita com o que a cozinheira disse: se gostou, técnicas confirmadas, "
-        "compras complementares com preço confirmado, e a aceitação do prato. A aceitação só é "
-        "gravada com todos os bloqueios resolvidos e as compras dentro do orçamento."
+        "Atualiza uma receita com o que a cozinheira disse: se gostou, compras complementares "
+        "com preço confirmado, e a aceitação do prato. A aceitação só é gravada com todos os "
+        "bloqueios resolvidos e as compras dentro do orçamento; mudar as compras desfaz um "
+        "aceite anterior."
     ),
     "dish_price": (
         "Calcula, para um prato aceito, o CMV por porção linha a linha, o preço mínimo e "
@@ -327,7 +328,7 @@ def build_tools(settings: Settings, store: Store) -> list[Tool]:
 
 
 def tool_schema(name: str, description: str, model: type[BaseModel]) -> dict[str, Any]:
-    """OpenAI-style function schema with every $ref inlined: the Gemini adapter drops $defs."""
+    """Function schema with every $ref inlined, so it survives any provider adapter as is."""
     parameters = _inline(model.model_json_schema())
     parameters["additionalProperties"] = False
     return {"name": name, "description": description, "parameters": parameters}

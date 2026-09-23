@@ -13,7 +13,7 @@ metadata:
 
 ## Quando usar
 
-Depois que a Dona Maria aceitou um prato (recipe_update com accepted verdadeiro). O cardápio e o orçamento comprometido atravessam conversas: o campo budget de qualquer tool mostra o que já foi gasto com pratos aceitos em dias anteriores.
+Depois que a Dona Maria aceitou um prato (recipe_update com accepted verdadeiro). O cardápio e o orçamento comprometido atravessam conversas: o campo budget de pantry_inventory, recipe_update e dish_price mostra o que já foi gasto com pratos aceitos em dias anteriores.
 
 ## Procedimento
 

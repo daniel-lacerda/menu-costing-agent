@@ -25,7 +25,7 @@ cp profile/.env.example ~/.hermes/profiles/sabor-da-maria/.env   # preencha as c
 sabor-da-maria chat        # ou: hermes -p sabor-da-maria chat
 ```
 
-O script instala o Hermes na versão fixada (se ainda não existir), instala este profile como `sabor-da-maria` com um comando de atalho, habilita o plugin de custeio (o que instala `openpyxl` no ambiente do Hermes pelo mecanismo oficial de dependências de plugin) e instala o SDK do Langfuse. As chaves do Langfuse são opcionais: sem elas o plugin não faz nada.
+O script instala o Hermes na versão fixada (se ainda não existir), instala este profile como `sabor-da-maria` com um comando de atalho, habilita o plugin de custeio (o que instala `openpyxl` no ambiente do Hermes pelo mecanismo oficial de dependências de plugin) e instala o SDK do Langfuse e o da Anthropic, este só para o juiz da suíte. As chaves do Langfuse são opcionais: sem elas o plugin não faz nada.
 
 Para conversar pelo navegador, com os cards de pergunta e as chamadas de tool visíveis:
 
@@ -79,13 +79,13 @@ As seis tools:
 
 **Modelo e provider.** OpenAI direto, sem intermediário no caminho dos dados. `gpt-6-sol` no loop da conversa, onde a consultora precisa raciocinar, lembrar restrições e usar juízo (a OpenAI o posiciona para workflows agênticos); `gpt-6-luna`, vinte vezes mais barato, nas tarefas mecânicas: triagem de escopo, recusa fora de escopo, título de sessão, compressão. Os dois foram lançados em 22 de setembro de 2026 e substituíram `gpt-5.6-terra` e `gpt-5.6-luna` no mesmo dia, com a suíte rodada nos quatro (tabela abaixo). O Hermes é agnóstico de provider (a troca é o bloco `model:` do config e uma variável no `.env`). As chamadas do modelo principal vão com `store: false`, por isso não aparecem no console de logs da OpenAI. Limite a observar: na organização usada, `gpt-6-luna` tem 200 mil tokens por minuto e cada chamada do loop carrega 40 a 80 mil tokens de contexto; por isso ele não fica no loop, apenas nas tarefas de contexto curto.
 
-**Busca.** Firecrawl como backend único de busca e extração. O que importa aqui não é ranking, é fidelidade da extração: as quantidades da página alimentam o CMV. Toda receita apresentada carrega o link e o rendimento da página; a consultora não inventa receitas nem links. Preços de compras não são pesquisados: a consultora propõe do próprio conhecimento do mercado e a Dona Maria confirma ou corrige, que é como se faz com quem conhece o mercado dela. Uma rodada anterior gastava dezoito buscas por consulta procurando preço de pimentão.
+**Busca.** Firecrawl como backend único de busca e extração. O que importa aqui não é ranking, é fidelidade da extração: as quantidades da página alimentam o CMV. Toda receita apresentada carrega o link e o rendimento da página, por regra de skill que a rubrica verifica; que a receita veio de uma página extraída é verificação determinística. Preços de compras não são pesquisados: a consultora propõe do próprio conhecimento do mercado e a Dona Maria confirma ou corrige, que é como se faz com quem conhece o mercado dela. Uma rodada anterior gastava dezoito buscas por consulta procurando preço de pimentão.
 
 **Tools em plugin, não em skill nem em MCP.** O guia do próprio Hermes diz: skill quando cabe em instruções mais tools existentes; tool quando a lógica precisa executar de forma precisa toda vez. O gate, a matemática e o estado precisam. Plugin em vez de MCP porque são funções Python em processo, e um servidor a mais não compraria nada. Plugin em vez de editar o core porque fork não se revisa.
 
 **Estado explícito.** A cozinha (`kitchen.json`), as correções da despensa e o cardápio de lançamento (`menu.json`) ficam em JSON no profile e atravessam sessões. Uma receita registrada e abandonada não consome orçamento e fica no arquivo como histórico. A memória nativa do Hermes (`USER.md`) fica reservada a preferências duráveis da Dona Maria. Cada fato tem um lugar só. Quando ela volta em outro dia, a consultora recapitula o que sabe, com a data, e pergunta apenas se algo mudou.
 
-**Tool Search desligado.** O Hermes esconde tools de plugin atrás de três tools de descoberta quando há tools diferíveis, um mecanismo pensado para catálogos com centenas de tools. Seis tools com 3,4 KB de schema ficam visíveis por inteiro (`tools.tool_search.enabled: "off"`). Com ele ligado, as skills que declaram `requires_tools` também sumiam do índice.
+**Tool Search desligado.** O Hermes esconde tools de plugin atrás de três tools de descoberta quando há tools diferíveis, um mecanismo pensado para catálogos com centenas de tools. Seis tools com cerca de 8 KB de schema ficam visíveis por inteiro (`tools.tool_search.enabled: "off"`). Com ele ligado, as skills que declaram `requires_tools` também sumiam do índice.
 
 **Toolset fechado.** `platform_toolsets.cli` é uma lista explícita: `web`, `clarify`, `skills`, `memory`. A toolset do plugin entra por ele estar habilitado. A busca em sessões antigas (`session_search`) ficou de fora depois que a suíte a pegou em flagrante: a consultora encontrou a transcrição de outra consulta e deu um prato como fechado sem confirmar nada. Os fatos da consulta têm um lugar só, o ledger das tools, e o modelo não deve reconstruí-los a partir de conversas antigas. Terminal, arquivos, browser, execução de código, delegação e cron ficam fora. Escritas de skill pelo agente exigem aprovação humana (`skills.write_approval`), e a revisão automática pós-turno, que grava memória e skills sem pedir, está desligada.
 
@@ -203,4 +203,4 @@ scripts/                      install.sh, converse.sh, evaluate.sh
 docs/                         enunciado do case
 ```
 
-Ferramentas de desenvolvimento: `uv sync`, `uv run pytest`, `uv run ruff check .`, `uv run mypy`. O código roda dentro do ambiente do Hermes (Python 3.11); o repositório espelha essa versão.
+Ferramentas de desenvolvimento: `uv sync --all-groups`, `uv run pytest`, `uv run ruff check .`, `uv run mypy`. O código roda dentro do ambiente do Hermes (Python 3.11); o repositório espelha essa versão.

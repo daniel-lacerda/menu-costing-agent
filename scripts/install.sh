@@ -19,6 +19,9 @@ if [ ! -d "${HERMES_SRC}/.git" ]; then
 fi
 git -C "${HERMES_SRC}" fetch -q origin
 git -C "${HERMES_SRC}" checkout -q "${HERMES_COMMIT}"
+# The official installer resolves dependencies for whatever commit it cloned; the pinned
+# commit may declare different ones.
+"${HOME}/.hermes/bin/uv" pip install --quiet --python "${HERMES_SRC}/venv/bin/python" -e "${HERMES_SRC}"
 
 hermes profile install "${REPO_DIR}/profile" --name sabor-da-maria --alias --yes
 # config.yaml already lists the plugin as enabled; this command is what installs its

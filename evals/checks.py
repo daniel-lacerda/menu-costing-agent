@@ -95,14 +95,12 @@ def _json_object(raw: str | None) -> dict[str, Any] | None:
 def accepted_only_after_confirmation(run: RunArtifacts) -> Check:
     """No recipe is accepted before she said she liked it and every technique was confirmed."""
     liked: set[str] = set()
-    techniques_seen: set[str] = set()
     for call in run.calls():
         if call.name != "recipe_update":
             continue
         rid = str(call.arguments.get("recipe_id"))
         if call.arguments.get("liked") is True:
             liked.add(rid)
-        techniques_seen.update((call.arguments.get("techniques") or {}).keys())
         if call.arguments.get("accepted") is True and rid not in liked:
             return Check(
                 name="accepted_only_after_confirmation",
@@ -124,7 +122,7 @@ def accepted_only_after_confirmation(run: RunArtifacts) -> Check:
     return Check(
         name="accepted_only_after_confirmation",
         passed=True,
-        evidence=f"liked recorded for {sorted(liked)}; techniques asked: {sorted(techniques_seen)}",
+        evidence=f"liked recorded for {sorted(liked)}; techniques confirmed in the profile",
     )
 
 
