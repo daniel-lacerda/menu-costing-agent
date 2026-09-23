@@ -95,20 +95,40 @@ def test_a_failing_triage_lets_the_turn_through() -> None:
     assert ScopeGuard(broken, "cheap-model")(RESPONSES_REQUEST) is None
 
 
-@pytest.mark.parametrize("text", ["fora", "Fora.", "FORA do escopo"])
-def test_host_classifier_reads_the_first_word(text: str) -> None:
-    from menu_costing.scope import host_classifier
+@pytest.mark.parametrize(("answer", "outside"), [("fora", True), ("escopo", False)])
+def test_host_classifier_reads_the_structured_answer(answer: str, outside: bool) -> None:
+    from menu_costing.scope import TRIAGE_SCHEMA, host_classifier
 
     class FakeResult:
-        def __init__(self, answer: str) -> None:
-            self.text = answer
+        def __init__(self, parsed: dict[str, str] | None) -> None:
+            self.parsed = parsed
+            self.text = ""
 
     class FakeLlm:
-        def complete(self, **kwargs: Any) -> FakeResult:
+        def complete_structured(self, **kwargs: Any) -> FakeResult:
             assert kwargs["model"] == "cheap-model"
-            return FakeResult(text)
+            assert kwargs["json_schema"] is TRIAGE_SCHEMA
+            return FakeResult({"classificacao": answer})
 
     class FakeCtx:
         llm = FakeLlm()
 
-    assert host_classifier(FakeCtx(), "cheap-model")("qualquer coisa") is True
+    assert host_classifier(FakeCtx(), "cheap-model")("qualquer coisa") is outside
+
+
+def test_host_classifier_refuses_an_answer_outside_the_schema() -> None:
+    from menu_costing.scope import host_classifier
+
+    class FakeResult:
+        parsed = None
+        text = "fora"
+
+    class FakeLlm:
+        def complete_structured(self, **kwargs: Any) -> FakeResult:
+            return FakeResult()
+
+    class FakeCtx:
+        llm = FakeLlm()
+
+    with pytest.raises(ValueError, match="schema"):
+        host_classifier(FakeCtx(), "cheap-model")("qualquer coisa")

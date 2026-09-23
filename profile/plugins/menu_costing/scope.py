@@ -17,7 +17,7 @@ Classifier = Callable[[str], bool]
 
 TRIAGE_INSTRUCTIONS = (
     "Você classifica mensagens que a Dona Maria, uma cozinheira abrindo um delivery, envia à sua "
-    "consultora de cardápio e precificação. Responda com uma única palavra.\n"
+    "consultora de cardápio e precificação. Classifique a mensagem.\n"
     "Responda 'escopo' para tudo que uma cozinheira diria nessa consulta: receitas, comida, "
     "ingredientes, a despensa e o que ela tem, compras, preços, orçamento, a cozinha e a rotina "
     "dela, o delivery, respostas a perguntas da consultora, cumprimentos, agradecimentos, dúvidas "
@@ -111,19 +111,32 @@ class ScopeGuard:
             logger.info("scope guard: turn %s served by %s", turn_id, response_model)
 
 
+TRIAGE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"classificacao": {"type": "string", "enum": ["escopo", "fora"]}},
+    "required": ["classificacao"],
+    "additionalProperties": False,
+}
+
+
 def host_classifier(ctx: Any, model: str) -> Classifier:
-    """Triage through the Hermes plugin LLM lane, so credentials and audit stay with the host."""
+    """Triage through the Hermes plugin LLM lane, so credentials and audit stay with the host.
+
+    The answer is a structured object with one enumerated field, not free text to parse.
+    """
 
     def classify(text: str) -> bool:
-        result = ctx.llm.complete(
-            messages=[
-                {"role": "system", "content": TRIAGE_INSTRUCTIONS},
-                {"role": "user", "content": text},
-            ],
+        result = ctx.llm.complete_structured(
+            instructions=TRIAGE_INSTRUCTIONS,
+            input=[{"type": "text", "text": text}],
+            json_schema=TRIAGE_SCHEMA,
+            schema_name="triagem",
             model=model,
             max_tokens=64,
             purpose="menu_costing.scope_triage",
         )
-        return str(result.text).strip().lower().startswith("fora")
+        if not isinstance(result.parsed, dict):
+            raise ValueError(f"triage answered without the schema: {result.text!r}")
+        return bool(result.parsed["classificacao"] == "fora")
 
     return classify

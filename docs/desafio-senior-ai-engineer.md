@@ -2,7 +2,7 @@
 
 > Vaga: Senior AI Engineer
 > Prazo: **7 dias**
-> Entrega: link do repositório (+ demo em vídeo, opcional) para os contatos do processo e os contatos do processo
+> Entrega: link do repositório (+ demo em vídeo, opcional) para os contatos do processo
 
 ---
 
@@ -68,7 +68,7 @@ A Dona Maria entregará o arquivo **`despensa_dona_maria.xlsx`**, com **duas aba
 
 ## 5. Submissão e prazo
 
-- Enviar link do repositório (+ demo, se houver) para os contatos do processo e os contatos do processo.
+- Enviar link do repositório (+ demo, se houver) para os contatos do processo.
 - **Prazo: 7 dias** corridos a partir do recebimento deste desafio.
 
 ## 6. Anexo
