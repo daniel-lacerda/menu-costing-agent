@@ -32,7 +32,7 @@ else
 fi
 # config.yaml already lists the plugin as enabled; this command is what installs its
 # dependencies (openpyxl, pydantic, pyyaml) into the Hermes environment.
-HERMES_HOME="${HOME}/.hermes/profiles/sabor-da-maria" hermes plugins enable menu_costing
+HERMES_HOME="${HOME}/.hermes/profiles/sabor-da-maria" hermes plugins enable menu_costing --no-allow-tool-override
 
 # The bundled Langfuse plugin declares no dependency on the SDK. Hermes installs optional SDKs
 # into its own environment with its managed uv; v4 is the SDK current Langfuse organizations accept.
